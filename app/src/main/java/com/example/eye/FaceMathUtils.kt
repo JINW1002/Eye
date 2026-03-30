@@ -2,10 +2,9 @@ package com.example.eye
 
 import android.graphics.PointF
 import android.graphics.RectF
-import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.pow
 import kotlin.math.sqrt
+import kotlin.math.abs
 
 object FaceMathUtils {
 
@@ -33,7 +32,6 @@ object FaceMathUtils {
             if (pt.x > maxX) maxX = pt.x
             if (pt.y > maxY) maxY = pt.y
         }
-
         return RectF(minX, minY, maxX, maxY)
     }
 
@@ -54,10 +52,6 @@ object FaceMathUtils {
         return ((vertical1 + vertical2) / 2f) / horizontal
     }
 
-    fun eyeHorizontalVector(outer: PointF, inner: PointF): PointF {
-        return PointF(inner.x - outer.x, inner.y - outer.y)
-    }
-
     fun irisOffsetRatio(outer: PointF, inner: PointF, irisCenter: PointF): Float {
         val dx = inner.x - outer.x
         val dy = inner.y - outer.y
@@ -67,18 +61,7 @@ object FaceMathUtils {
         val px = irisCenter.x - outer.x
         val py = irisCenter.y - outer.y
 
-        val proj = (px * dx + py * dy) / lengthSq
-        return proj
-    }
-
-    fun vectorAngleDeg(v1: PointF, v2: PointF): Float? {
-        val n1 = sqrt(v1.x * v1.x + v1.y * v1.y)
-        val n2 = sqrt(v2.x * v2.x + v2.y * v2.y)
-        if (n1 < 1e-6f || n2 < 1e-6f) return null
-
-        val dot = v1.x * v2.x + v1.y * v2.y
-        val cos = (dot / (n1 * n2)).coerceIn(-1f, 1f)
-        return Math.toDegrees(kotlin.math.acos(cos).toDouble()).toFloat()
+        return (px * dx + py * dy) / lengthSq
     }
 
     fun isFaceCentered(faceBox: RectF, imageWidth: Int, imageHeight: Int): Boolean {

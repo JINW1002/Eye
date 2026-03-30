@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -27,6 +28,11 @@ class MainActivity : AppCompatActivity() {
 
     private val requestCodeCamera = 100
 
+    private var currentCameraMode = CameraMode.FRONT
+    private var currentTorchOn = false
+    private var boundCamera: Camera? = null
+    private var cameraProvider: androidx.camera.lifecycle.ProcessCameraProvider? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -43,7 +49,7 @@ class MainActivity : AppCompatActivity() {
         faceLandmarkerHelper.setup()
 
         if (allPermissionsGranted()) {
-            startCamera()
+            startCamera(currentCameraMode)
         } else {
             ActivityCompat.requestPermissions(
                 this,
@@ -53,59 +59,87 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startCamera() {
+    private fun selectorFor(mode: CameraMode): CameraSelector {
+        return when (mode) {
+            CameraMode.FRONT -> CameraSelector.DEFAULT_FRONT_CAMERA
+            CameraMode.BACK -> CameraSelector.DEFAULT_BACK_CAMERA
+        }
+    }
+
+    private fun startCamera(mode: CameraMode) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
+            cameraProvider = cameraProviderFuture.get()
+            bindUseCases(mode)
+        }, ContextCompat.getMainExecutor(this))
+    }
 
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
+    private fun bindUseCases(mode: CameraMode) {
+        val provider = cameraProvider ?: return
 
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+        val preview = Preview.Builder()
+            .build()
+            .also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
 
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also { analysis ->
-                    analysis.setAnalyzer(
-                        cameraExecutor,
-                        FrameAnalyzer(faceLandmarkerHelper) { result ->
-                            runOnUiThread {
-                                guideText.text = result.guideMessage
-                                fpsText.text = result.fpsText
-                                debugText.text = result.debugText
-                                overlayView.setResults(
-                                    landmarks = result.landmarks,
-                                    faceBox = result.faceBox,
-                                    leftEyePoints = result.leftEyePoints,
-                                    rightEyePoints = result.rightEyePoints,
-                                    leftIrisPoints = result.leftIrisPoints,
-                                    rightIrisPoints = result.rightIrisPoints,
-                                    imageWidth = result.imageWidth,
-                                    imageHeight = result.imageHeight,
-                                    faceDetected = result.faceDetected
-                                )
+        val imageAnalyzer = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { analysis ->
+                analysis.setAnalyzer(
+                    cameraExecutor,
+                    FrameAnalyzer(faceLandmarkerHelper) { result ->
+                        runOnUiThread {
+                            guideText.text = result.guideMessage
+                            fpsText.text = result.fpsText
+                            debugText.text = result.debugText
+
+                            overlayView.setResults(
+                                landmarks = result.landmarks,
+                                faceBox = result.faceBox,
+                                leftEyePoints = result.leftEyePoints,
+                                rightEyePoints = result.rightEyePoints,
+                                leftIrisPoints = result.leftIrisPoints,
+                                rightIrisPoints = result.rightIrisPoints,
+                                imageWidth = result.imageWidth,
+                                imageHeight = result.imageHeight,
+                                faceDetected = result.faceDetected
+                            )
+
+                            if (result.requestedCameraMode != currentCameraMode) {
+                                currentCameraMode = result.requestedCameraMode
+                                bindUseCases(currentCameraMode)
+                                return@runOnUiThread
+                            }
+
+                            if (result.requestTorchOn != currentTorchOn) {
+                                currentTorchOn = result.requestTorchOn
+                                if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
+                                    boundCamera?.cameraControl?.enableTorch(currentTorchOn)
+                                }
                             }
                         }
-                    )
-                }
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    this,
-                    cameraSelector,
-                    preview,
-                    imageAnalyzer
+                    }
                 )
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
-        }, ContextCompat.getMainExecutor(this))
+
+        try {
+            provider.unbindAll()
+            boundCamera = provider.bindToLifecycle(
+                this,
+                selectorFor(mode),
+                preview,
+                imageAnalyzer
+            )
+
+            if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
+                boundCamera?.cameraControl?.enableTorch(currentTorchOn)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun allPermissionsGranted(): Boolean {
@@ -125,7 +159,7 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == requestCodeCamera) {
             if (allPermissionsGranted()) {
-                startCamera()
+                startCamera(currentCameraMode)
             } else {
                 finish()
             }

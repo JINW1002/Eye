@@ -94,7 +94,7 @@ class FrameAnalyzer(
                 rightIrisVisible = rightIrisPoints.size >= 5
             }
 
-            val (guideMessage, protocolDebug, phaseName) = protocolManager.update(
+            val (fullText, requestedCameraMode, requestTorchOn) = protocolManager.update(
                 faceDetected = faceDetected,
                 faceCentered = faceCentered,
                 leftEyeOpenRatio = leftEyeOpenRatio,
@@ -103,11 +103,9 @@ class FrameAnalyzer(
                 rightIrisVisible = rightIrisVisible
             )
 
-            val debugText = buildString {
-                append(protocolDebug)
-                append("\nlandmarks: ${landmarks.size}")
-                append("\nphaseName: $phaseName")
-            }
+            val lines = fullText.split("\n")
+            val guideMessage = lines.firstOrNull() ?: ""
+            val debugText = lines.drop(1).joinToString("\n")
 
             val finalResult = AnalysisResult(
                 guideMessage = guideMessage,
@@ -121,7 +119,9 @@ class FrameAnalyzer(
                 leftIrisPoints = leftIrisPoints,
                 rightIrisPoints = rightIrisPoints,
                 imageWidth = rotatedBitmap.width,
-                imageHeight = rotatedBitmap.height
+                imageHeight = rotatedBitmap.height,
+                requestedCameraMode = requestedCameraMode,
+                requestTorchOn = requestTorchOn
             )
 
             onResult(finalResult)

@@ -15,5 +15,7 @@ data class AnalysisResult(
     val leftIrisPoints: List<PointF> = emptyList(),
     val rightIrisPoints: List<PointF> = emptyList(),
     val imageWidth: Int = 0,
-    val imageHeight: Int = 0
+    val imageHeight: Int = 0,
+    val requestedCameraMode: CameraMode = CameraMode.FRONT,
+    val requestTorchOn: Boolean = false
 )
