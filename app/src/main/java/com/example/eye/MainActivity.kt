@@ -3,6 +3,8 @@ package com.example.eye
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
+import android.speech.tts.TextToSpeech
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
@@ -13,10 +15,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: FaceOverlayView
@@ -26,12 +29,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
 
+    private val protocolManager = ProtocolManager()
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var lastSpokenGuide = ""
+    private var lastSpeakTime = 0L
+    private val speakInterval = 3000L
+
     private val requestCodeCamera = 100
 
     private var currentCameraMode = CameraMode.FRONT
     private var currentTorchOn = false
     private var boundCamera: Camera? = null
-    private var cameraProvider: androidx.camera.lifecycle.ProcessCameraProvider? = null
+    private var cameraProvider: ProcessCameraProvider? = null
+
+    private var isSwitchingCamera = false
+    private var lastCameraSwitchTime = 0L
+    private val cameraSwitchCooldownMs = 1200L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +63,8 @@ class MainActivity : AppCompatActivity() {
         faceLandmarkerHelper = FaceLandmarkerHelper(this)
         faceLandmarkerHelper.setup()
 
+        tts = TextToSpeech(this, this)
+
         if (allPermissionsGranted()) {
             startCamera(currentCameraMode)
         } else {
@@ -55,6 +72,34 @@ class MainActivity : AppCompatActivity() {
                 this,
                 arrayOf(Manifest.permission.CAMERA),
                 requestCodeCamera
+            )
+        }
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts?.setLanguage(Locale.KOREAN)
+            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                    result != TextToSpeech.LANG_NOT_SUPPORTED
+        }
+    }
+
+    private fun speakGuideMessage(message: String) {
+        if (!ttsReady) return
+        if (message.isBlank()) return
+
+        val now = System.currentTimeMillis()
+
+        if (message != lastSpokenGuide || now - lastSpeakTime >= speakInterval) {
+            lastSpokenGuide = message
+            lastSpeakTime = now
+
+            tts?.stop()
+            tts?.speak(
+                message,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "guide_message"
             )
         }
     }
@@ -78,6 +123,9 @@ class MainActivity : AppCompatActivity() {
     private fun bindUseCases(mode: CameraMode) {
         val provider = cameraProvider ?: return
 
+        isSwitchingCamera = true
+        lastCameraSwitchTime = SystemClock.elapsedRealtime()
+
         val preview = Preview.Builder()
             .build()
             .also {
@@ -90,7 +138,11 @@ class MainActivity : AppCompatActivity() {
             .also { analysis ->
                 analysis.setAnalyzer(
                     cameraExecutor,
-                    FrameAnalyzer(faceLandmarkerHelper) { result ->
+                    FrameAnalyzer(
+                        faceLandmarkerHelper,
+                        protocolManager,
+                        mode
+                    ) { result ->
                         runOnUiThread {
                             guideText.text = result.guideMessage
                             fpsText.text = result.fpsText
@@ -108,10 +160,17 @@ class MainActivity : AppCompatActivity() {
                                 faceDetected = result.faceDetected
                             )
 
-                            if (result.requestedCameraMode != currentCameraMode) {
-                                currentCameraMode = result.requestedCameraMode
-                                bindUseCases(currentCameraMode)
-                                return@runOnUiThread
+                            speakGuideMessage(result.guideMessage)
+
+                            val now = SystemClock.elapsedRealtime()
+                            val inCooldown = now - lastCameraSwitchTime < cameraSwitchCooldownMs
+
+                            if (!isSwitchingCamera && !inCooldown) {
+                                if (result.requestedCameraMode != currentCameraMode) {
+                                    currentCameraMode = result.requestedCameraMode
+                                    bindUseCases(currentCameraMode)
+                                    return@runOnUiThread
+                                }
                             }
 
                             if (result.requestTorchOn != currentTorchOn) {
@@ -127,6 +186,7 @@ class MainActivity : AppCompatActivity() {
 
         try {
             provider.unbindAll()
+
             boundCamera = provider.bindToLifecycle(
                 this,
                 selectorFor(mode),
@@ -137,8 +197,13 @@ class MainActivity : AppCompatActivity() {
             if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
                 boundCamera?.cameraControl?.enableTorch(currentTorchOn)
             }
+
+            currentCameraMode = mode
+            isSwitchingCamera = false
+
         } catch (e: Exception) {
             e.printStackTrace()
+            isSwitchingCamera = false
         }
     }
 
@@ -170,5 +235,9 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         faceLandmarkerHelper.clear()
         cameraExecutor.shutdown()
+
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
     }
 }

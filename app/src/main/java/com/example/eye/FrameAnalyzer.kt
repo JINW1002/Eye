@@ -8,10 +8,10 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 
 class FrameAnalyzer(
     private val faceLandmarkerHelper: FaceLandmarkerHelper,
+    private val protocolManager: ProtocolManager,
+    private val cameraMode: CameraMode,
     private val onResult: (AnalysisResult) -> Unit
 ) : ImageAnalysis.Analyzer {
-
-    private val protocolManager = ProtocolManager()
 
     private var frameCount = 0
     private var fps = 0.0
@@ -30,10 +30,11 @@ class FrameAnalyzer(
 
         try {
             val bitmap = FaceLandmarkerHelper.imageProxyToBitmap(image)
+
             val rotatedBitmap = FaceLandmarkerHelper.rotateBitmap(
                 bitmap = bitmap,
                 rotationDegrees = image.imageInfo.rotationDegrees,
-                mirrorFrontCamera = true
+                mirrorFrontCamera = cameraMode == CameraMode.FRONT
             )
 
             val result: FaceLandmarkerResult? = faceLandmarkerHelper.detect(rotatedBitmap)
