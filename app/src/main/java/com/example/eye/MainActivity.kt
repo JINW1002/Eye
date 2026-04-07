@@ -3,7 +3,6 @@ package com.example.eye
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -35,7 +34,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var ttsReady = false
     private var lastSpokenGuide = ""
     private var lastSpeakTime = 0L
-    private val speakInterval = 3000L
+    private val speakInterval = 3000L   // 3초마다 반복 안내
 
     private val requestCodeCamera = 100
 
@@ -43,10 +42,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var currentTorchOn = false
     private var boundCamera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
-
-    private var isSwitchingCamera = false
-    private var lastCameraSwitchTime = 0L
-    private val cameraSwitchCooldownMs = 1200L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +85,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val now = System.currentTimeMillis()
 
+        // 메시지가 바뀌었거나, 같은 단계가 3초 이상 유지되면 다시 읽기
         if (message != lastSpokenGuide || now - lastSpeakTime >= speakInterval) {
             lastSpokenGuide = message
             lastSpeakTime = now
@@ -123,9 +119,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun bindUseCases(mode: CameraMode) {
         val provider = cameraProvider ?: return
 
-        isSwitchingCamera = true
-        lastCameraSwitchTime = SystemClock.elapsedRealtime()
-
         val preview = Preview.Builder()
             .build()
             .also {
@@ -138,11 +131,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .also { analysis ->
                 analysis.setAnalyzer(
                     cameraExecutor,
-                    FrameAnalyzer(
-                        faceLandmarkerHelper,
-                        protocolManager,
-                        mode
-                    ) { result ->
+                    FrameAnalyzer(faceLandmarkerHelper, protocolManager, mode) { result ->
                         runOnUiThread {
                             guideText.text = result.guideMessage
                             fpsText.text = result.fpsText
@@ -162,15 +151,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                             speakGuideMessage(result.guideMessage)
 
-                            val now = SystemClock.elapsedRealtime()
-                            val inCooldown = now - lastCameraSwitchTime < cameraSwitchCooldownMs
-
-                            if (!isSwitchingCamera && !inCooldown) {
-                                if (result.requestedCameraMode != currentCameraMode) {
-                                    currentCameraMode = result.requestedCameraMode
-                                    bindUseCases(currentCameraMode)
-                                    return@runOnUiThread
-                                }
+                            if (result.requestedCameraMode != currentCameraMode) {
+                                currentCameraMode = result.requestedCameraMode
+                                bindUseCases(currentCameraMode)
+                                return@runOnUiThread
                             }
 
                             if (result.requestTorchOn != currentTorchOn) {
@@ -186,7 +170,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         try {
             provider.unbindAll()
-
             boundCamera = provider.bindToLifecycle(
                 this,
                 selectorFor(mode),
@@ -197,13 +180,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
                 boundCamera?.cameraControl?.enableTorch(currentTorchOn)
             }
-
-            currentCameraMode = mode
-            isSwitchingCamera = false
-
         } catch (e: Exception) {
             e.printStackTrace()
-            isSwitchingCamera = false
         }
     }
 

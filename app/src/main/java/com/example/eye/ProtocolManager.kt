@@ -113,16 +113,16 @@ class ProtocolManager {
                 "전면 카메라로 전환합니다. 오른쪽 눈을 빠르게 두 번 가릴 준비를 해주세요"
 
             ScreeningPhase.COVER_RIGHT_TEST ->
-                "오른쪽 눈을 가리고 떼고, 다시 가리고 떼주세요"
+                "오른쪽 눈을 가리고 떼고 다시 가리고 떼주세요"
 
             ScreeningPhase.COVER_LEFT_PREPARE ->
                 "왼쪽 눈을 빠르게 두 번 가릴 준비를 해주세요"
 
             ScreeningPhase.COVER_LEFT_TEST ->
-                "왼쪽 눈을 가리고 떼고, 다시 가리고 떼주세요"
+                "왼쪽 눈을 가리고 떼고 다시 가리고 떼주세요"
 
             ScreeningPhase.RESULT ->
-                "검사 결과: $finalLabel (점수: $finalScore)"
+                "검사 결과는 $finalLabel 입니다"
         }
 
         val cameraMode = when (phase) {
@@ -133,21 +133,15 @@ class ProtocolManager {
 
         val torchOn = phase == ScreeningPhase.REFLECTION_BACK_CAPTURE
 
+        // ✅ 핵심 수치만 남김
         val debugText = buildString {
             append("phase: ${phase.name}\n")
-            append("elapsed: %.1fs\n".format(elapsedSec()))
-            append("faceDetected: $faceDetected\n")
-            append("faceCentered: $faceCentered\n")
-            append("leftOpen: %.3f\n".format(leftEyeOpenRatio))
-            append("rightOpen: %.3f\n".format(rightEyeOpenRatio))
-            append("leftIris: $leftIrisVisible\n")
-            append("rightIris: $rightIrisVisible\n")
-            append("coverRightFSM: ${coverRightFsm.getStateName()}\n")
-            append("coverLeftFSM: ${coverLeftFsm.getStateName()}\n")
-            append("cameraMode: ${cameraMode.name}\n")
-            append("torchOn: $torchOn")
+            append("L-open: %.2f\n".format(leftEyeOpenRatio))
+            append("R-open: %.2f\n".format(rightEyeOpenRatio))
+            append("L-iris: $leftIrisVisible\n")
+            append("R-iris: $rightIrisVisible")
         }
 
-        return Triple(guideMessage + "\n\n" + debugText, cameraMode, torchOn)
+        return Triple("$guideMessage\n\n$debugText", cameraMode, torchOn)
     }
 }
