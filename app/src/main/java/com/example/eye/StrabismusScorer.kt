@@ -5,8 +5,8 @@ object StrabismusScorer {
     fun score(
         bothEyesReady: Boolean,
         alignmentScore: Float,
-        irisHorizontalDiff: Float,
-        irisVerticalDiff: Float
+        reflectionScore: Float,
+        coverScore: Float
     ): StrabismusScoreResult {
 
         if (!bothEyesReady) {
@@ -18,13 +18,10 @@ object StrabismusScorer {
             )
         }
 
-        val horizontalComponent = (irisHorizontalDiff / 0.18f).coerceIn(0f, 1f)
-        val verticalComponent = (irisVerticalDiff / 0.14f).coerceIn(0f, 1f)
-
         val finalScore = (
-                horizontalComponent * 0.7f +
-                        verticalComponent * 0.2f +
-                        alignmentScore * 0.1f
+                alignmentScore * 0.45f +
+                        reflectionScore * 0.30f +
+                        coverScore * 0.25f
                 ).coerceIn(0f, 1f)
 
         val suspected = finalScore >= 0.45f
@@ -36,11 +33,9 @@ object StrabismusScorer {
         }
 
         val reason = when {
-            !suspected -> "좌우 눈 정렬 차이가 기준 이내입니다."
-            irisHorizontalDiff >= irisVerticalDiff ->
-                "수평 방향 홍채 위치 차이가 커서 사시가 의심됩니다."
-            else ->
-                "수직 방향 홍채 위치 차이가 커서 사시가 의심됩니다."
+            !suspected -> "정렬, 반사광, 가림 검사 결과가 전반적으로 안정적입니다."
+            finalScore >= 0.75f -> "여러 검사 항목에서 일관되게 큰 차이가 관찰됩니다."
+            else -> "일부 검사 항목에서 좌우 눈 차이가 관찰됩니다."
         }
 
         return StrabismusScoreResult(

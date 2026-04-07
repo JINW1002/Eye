@@ -18,6 +18,7 @@ class FrameAnalyzer(
     private var lastFpsTime = System.currentTimeMillis()
 
     private val scoreAccumulator = StrabismusScoreAccumulator(maxFrames = 20)
+    private val coverTestTracker = CoverTestTracker()
 
     override fun analyze(image: ImageProxy) {
         frameCount++
@@ -81,6 +82,16 @@ class FrameAnalyzer(
             var alignmentSuspected = false
             var alignmentReason = "정렬 계산 전"
 
+            var reflectionScore = 0f
+            var reflectionSuspected = false
+            var reflectionReason = "반사광 계산 전"
+
+            var rightCoverShift = 0f
+            var leftCoverShift = 0f
+            var coverScore = 0f
+            var coverSuspected = false
+            var coverReason = "가림 검사 계산 전"
+
             var strabismusScore = 0f
             var strabismusSuspected = false
             var strabismusLabel = "정상"
@@ -118,15 +129,11 @@ class FrameAnalyzer(
 
                 leftIrisPoints = if (landmarks.size > FaceMeshIndices.LEFT_IRIS.max()) {
                     FaceMeshIndices.LEFT_IRIS.mapNotNull { landmarks.getOrNull(it) }
-                } else {
-                    emptyList()
-                }
+                } else emptyList()
 
                 rightIrisPoints = if (landmarks.size > FaceMeshIndices.RIGHT_IRIS.max()) {
                     FaceMeshIndices.RIGHT_IRIS.mapNotNull { landmarks.getOrNull(it) }
-                } else {
-                    emptyList()
-                }
+                } else emptyList()
 
                 val eyeRoiResult = EyeRoiExtractor.extractEyeRois(
                     bitmap = rotatedBitmap,
@@ -189,11 +196,52 @@ class FrameAnalyzer(
                 alignmentSuspected = alignmentResult.suspected
                 alignmentReason = alignmentResult.reason
 
+                val reflectionResult = ReflectionScorer.score(
+                    bothEyesReady = bothEyesReady,
+                    irisHorizontalDiff = irisHorizontalDiff,
+                    irisVerticalDiff = irisVerticalDiff
+                )
+                reflectionScore = reflectionResult.score
+                reflectionSuspected = reflectionResult.suspected
+                reflectionReason = reflectionResult.reason
+
+                coverTestTracker.updateBaseline(
+                    bothEyesReady = bothEyesReady,
+                    irisHorizontalDiff = irisHorizontalDiff,
+                    irisVerticalDiff = irisVerticalDiff
+                )
+
+                val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
+                val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+
+                if (rightCovered && !leftCovered) {
+                    coverTestTracker.recordRightCover(
+                        bothEyesReady = bothEyesReady,
+                        currentHorizontalDiff = irisHorizontalDiff,
+                        currentVerticalDiff = irisVerticalDiff
+                    )
+                }
+
+                if (leftCovered && !rightCovered) {
+                    coverTestTracker.recordLeftCover(
+                        bothEyesReady = bothEyesReady,
+                        currentHorizontalDiff = irisHorizontalDiff,
+                        currentVerticalDiff = irisVerticalDiff
+                    )
+                }
+
+                val coverState = coverTestTracker.currentState()
+                rightCoverShift = coverState.rightCoverShift
+                leftCoverShift = coverState.leftCoverShift
+                coverScore = coverState.coverScore
+                coverSuspected = coverState.suspected
+                coverReason = coverState.reason
+
                 val strabismusResult = StrabismusScorer.score(
                     bothEyesReady = bothEyesReady,
                     alignmentScore = alignmentScore,
-                    irisHorizontalDiff = irisHorizontalDiff,
-                    irisVerticalDiff = irisVerticalDiff
+                    reflectionScore = reflectionScore,
+                    coverScore = coverScore
                 )
 
                 strabismusScore = strabismusResult.score
@@ -231,46 +279,56 @@ class FrameAnalyzer(
                 leftEyeOpenRatio = leftEyeOpenRatio,
                 rightEyeOpenRatio = rightEyeOpenRatio,
                 leftIrisVisible = leftIrisVisible,
-                rightIrisVisible = rightIrisVisible
+                rightIrisVisible = rightIrisVisible,
+                accumulatedScore = accumulatedScore,
+                accumulatedFrameCount = accumulatedFrameCount,
+                accumulatedLabel = accumulatedLabel,
+                accumulatedReason = accumulatedReason
             )
 
             val lines = fullText.split("\n")
             val guideMessage = lines.firstOrNull() ?: ""
             val originalDebugText = lines.drop(1).joinToString("\n")
 
+            val finalResultReady = protocolManager.isInResultPhase()
+            val finalLabel = protocolManager.getFinalLabel()
+            val finalScore = protocolManager.getFinalScore()
+            val finalReason = protocolManager.getFinalReason()
+
             val roiDebug = buildString {
                 append(originalDebugText)
-
                 if (originalDebugText.isNotBlank()) append("\n")
 
                 append("leftEyeRoiScore: %.2f\n".format(leftEyeRoiScore))
                 append("rightEyeRoiScore: %.2f\n".format(rightEyeRoiScore))
                 append("bothEyeRoiValid: $bothEyeRoiValid\n")
                 append("bothEyesReady: $bothEyesReady\n")
+
                 append("alignmentScore: %.2f\n".format(alignmentScore))
-                append("alignmentSuspected: $alignmentSuspected\n")
-                append("irisHorizontalDiff: %.3f\n".format(irisHorizontalDiff))
-                append("irisVerticalDiff: %.3f\n".format(irisVerticalDiff))
+                append("reflectionScore: %.2f\n".format(reflectionScore))
+                append("coverScore: %.2f\n".format(coverScore))
+                append("rightCoverShift: %.3f\n".format(rightCoverShift))
+                append("leftCoverShift: %.3f\n".format(leftCoverShift))
+
                 append("strabismusScore: %.3f\n".format(strabismusScore))
                 append("strabismusSuspected: $strabismusSuspected\n")
                 append("strabismusLabel: $strabismusLabel\n")
+
                 append("accumulatedScore: %.3f\n".format(accumulatedScore))
                 append("accumulatedFrameCount: $accumulatedFrameCount\n")
                 append("accumulatedSuspected: $accumulatedSuspected\n")
                 append("accumulatedLabel: $accumulatedLabel\n")
+
+                append("finalResultReady: $finalResultReady\n")
+                append("finalResultLabel: $finalLabel\n")
+                append("finalResultScore: %.3f\n".format(finalScore))
+
                 append("alignmentReason: $alignmentReason\n")
+                append("reflectionReason: $reflectionReason\n")
+                append("coverReason: $coverReason\n")
                 append("strabismusReason: $strabismusReason\n")
-                append("accumulatedReason: $accumulatedReason")
-
-                leftIrisCenter?.let {
-                    append("\nL-iris-center: (%.1f, %.1f)".format(it.x, it.y))
-                }
-                rightIrisCenter?.let {
-                    append("\nR-iris-center: (%.1f, %.1f)".format(it.x, it.y))
-                }
-
-                append("\nL-norm: (%.3f, %.3f)".format(leftIrisNormalizedX, leftIrisNormalizedY))
-                append("\nR-norm: (%.3f, %.3f)".format(rightIrisNormalizedX, rightIrisNormalizedY))
+                append("accumulatedReason: $accumulatedReason\n")
+                append("finalReason: $finalReason")
             }
 
             val finalResult = AnalysisResult(
@@ -306,6 +364,14 @@ class FrameAnalyzer(
                 alignmentScore = alignmentScore,
                 alignmentSuspected = alignmentSuspected,
                 alignmentReason = alignmentReason,
+                reflectionScore = reflectionScore,
+                reflectionSuspected = reflectionSuspected,
+                reflectionReason = reflectionReason,
+                rightCoverShift = rightCoverShift,
+                leftCoverShift = leftCoverShift,
+                coverScore = coverScore,
+                coverSuspected = coverSuspected,
+                coverReason = coverReason,
                 strabismusScore = strabismusScore,
                 strabismusSuspected = strabismusSuspected,
                 strabismusLabel = strabismusLabel,
@@ -315,6 +381,10 @@ class FrameAnalyzer(
                 accumulatedSuspected = accumulatedSuspected,
                 accumulatedLabel = accumulatedLabel,
                 accumulatedReason = accumulatedReason,
+                isFinalResult = finalResultReady,
+                finalResultLabel = finalLabel,
+                finalResultScore = finalScore,
+                finalResultReason = finalReason,
                 imageWidth = rotatedBitmap.width,
                 imageHeight = rotatedBitmap.height,
                 requestedCameraMode = requestedCameraMode,

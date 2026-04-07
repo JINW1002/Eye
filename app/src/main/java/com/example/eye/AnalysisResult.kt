@@ -43,6 +43,16 @@ data class AnalysisResult(
     val alignmentSuspected: Boolean = false,
     val alignmentReason: String = "",
 
+    val reflectionScore: Float = 0f,
+    val reflectionSuspected: Boolean = false,
+    val reflectionReason: String = "",
+
+    val rightCoverShift: Float = 0f,
+    val leftCoverShift: Float = 0f,
+    val coverScore: Float = 0f,
+    val coverSuspected: Boolean = false,
+    val coverReason: String = "",
+
     val strabismusScore: Float = 0f,
     val strabismusSuspected: Boolean = false,
     val strabismusLabel: String = "정상",
@@ -53,6 +63,11 @@ data class AnalysisResult(
     val accumulatedSuspected: Boolean = false,
     val accumulatedLabel: String = "판정불가",
     val accumulatedReason: String = "",
+
+    val isFinalResult: Boolean = false,
+    val finalResultLabel: String = "판정불가",
+    val finalResultScore: Float = 0f,
+    val finalResultReason: String = "",
 
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,

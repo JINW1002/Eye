@@ -17,31 +17,7 @@ class FaceOverlayView @JvmOverloads constructor(
     private val facePaint = Paint().apply {
         color = Color.GREEN
         style = Paint.Style.STROKE
-        strokeWidth = 4f
-        isAntiAlias = true
-    }
-
-    private val landmarkPaint = Paint().apply {
-        color = Color.YELLOW
-        style = Paint.Style.FILL
-        isAntiAlias = true
-    }
-
-    private val leftEyePaint = Paint().apply {
-        color = Color.CYAN
-        style = Paint.Style.FILL
-        isAntiAlias = true
-    }
-
-    private val rightEyePaint = Paint().apply {
-        color = Color.RED
-        style = Paint.Style.FILL
-        isAntiAlias = true
-    }
-
-    private val irisPaint = Paint().apply {
-        color = Color.MAGENTA
-        style = Paint.Style.FILL
+        strokeWidth = 3f
         isAntiAlias = true
     }
 
@@ -59,13 +35,15 @@ class FaceOverlayView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    private var landmarks: List<PointF> = emptyList()
+    private val irisPaint = Paint().apply {
+        color = Color.MAGENTA
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
     private var faceBox: RectF? = null
-    private var leftEyePoints: List<PointF> = emptyList()
-    private var rightEyePoints: List<PointF> = emptyList()
     private var leftIrisPoints: List<PointF> = emptyList()
     private var rightIrisPoints: List<PointF> = emptyList()
-
     private var leftEyeRoiRect: RectF? = null
     private var rightEyeRoiRect: RectF? = null
 
@@ -86,10 +64,7 @@ class FaceOverlayView @JvmOverloads constructor(
         imageHeight: Int,
         faceDetected: Boolean
     ) {
-        this.landmarks = landmarks
         this.faceBox = faceBox
-        this.leftEyePoints = leftEyePoints
-        this.rightEyePoints = rightEyePoints
         this.leftIrisPoints = leftIrisPoints
         this.rightIrisPoints = rightIrisPoints
         this.leftEyeRoiRect = leftEyeRoiRect
@@ -118,26 +93,6 @@ class FaceOverlayView @JvmOverloads constructor(
             )
         }
 
-        for (pt in landmarks) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 2.5f, landmarkPaint)
-        }
-
-        for (pt in leftEyePoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 4f, leftEyePaint)
-        }
-
-        for (pt in rightEyePoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 4f, rightEyePaint)
-        }
-
-        for (pt in leftIrisPoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 4f, irisPaint)
-        }
-
-        for (pt in rightIrisPoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 4f, irisPaint)
-        }
-
         leftEyeRoiRect?.let { rect ->
             canvas.drawRect(
                 rect.left * scaleX,
@@ -156,6 +111,14 @@ class FaceOverlayView @JvmOverloads constructor(
                 rect.bottom * scaleY,
                 rightEyeRoiPaint
             )
+        }
+
+        for (pt in leftIrisPoints) {
+            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 5f, irisPaint)
+        }
+
+        for (pt in rightIrisPoints) {
+            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 5f, irisPaint)
         }
     }
 }

@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
@@ -23,11 +25,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: FaceOverlayView
     private lateinit var guideText: TextView
+    private lateinit var subtitleText: TextView
     private lateinit var fpsText: TextView
     private lateinit var debugText: TextView
 
+    private lateinit var resultCard: LinearLayout
+    private lateinit var resultTitleText: TextView
+    private lateinit var resultValueText: TextView
+    private lateinit var resultReasonText: TextView
+
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
+    private lateinit var csvLogger: ScreeningCsvLogger
 
     private val protocolManager = ProtocolManager()
 
@@ -45,6 +54,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var boundCamera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
+    private var hasSavedFinalResult = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -52,14 +63,21 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         previewView = findViewById(R.id.previewView)
         overlayView = findViewById(R.id.overlayView)
         guideText = findViewById(R.id.guideText)
+        subtitleText = findViewById(R.id.subtitleText)
         fpsText = findViewById(R.id.fpsText)
         debugText = findViewById(R.id.debugText)
+
+        resultCard = findViewById(R.id.resultCard)
+        resultTitleText = findViewById(R.id.resultTitleText)
+        resultValueText = findViewById(R.id.resultValueText)
+        resultReasonText = findViewById(R.id.resultReasonText)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         faceLandmarkerHelper = FaceLandmarkerHelper(this)
         faceLandmarkerHelper.setup()
 
+        csvLogger = ScreeningCsvLogger(this)
         tts = TextToSpeech(this, this)
 
         if (allPermissionsGranted()) {
@@ -133,7 +151,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         runOnUiThread {
                             guideText.text = result.guideMessage
                             fpsText.text = result.fpsText
-                            debugText.text = result.debugText
+                            subtitleText.text = buildSubtitle(result)
+
+                            // 기본은 숨김
+                            debugText.visibility = View.GONE
 
                             overlayView.setResults(
                                 landmarks = result.landmarks,
@@ -149,6 +170,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                                 faceDetected = result.faceDetected
                             )
 
+                            if (result.isFinalResult) {
+                                resultCard.visibility = View.VISIBLE
+                                resultValueText.text = result.finalResultLabel
+                                resultReasonText.text = result.finalResultReason
+                            } else {
+                                resultCard.visibility = View.GONE
+                            }
+
                             speakGuideMessage(result.guideMessage)
 
                             if (result.requestedCameraMode != currentCameraMode) {
@@ -162,6 +191,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                                 if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
                                     boundCamera?.cameraControl?.enableTorch(currentTorchOn)
                                 }
+                            }
+
+                            if (result.isFinalResult && !hasSavedFinalResult) {
+                                csvLogger.append(result)
+                                hasSavedFinalResult = true
                             }
                         }
                     }
@@ -183,6 +217,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun buildSubtitle(result: AnalysisResult): String {
+        return if (result.isFinalResult) {
+            "최종 점수: %.2f".format(result.finalResultScore)
+        } else {
+            "누적 점수: %.2f | 유효 프레임: %d".format(
+                result.accumulatedScore,
+                result.accumulatedFrameCount
+            )
         }
     }
 
