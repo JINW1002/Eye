@@ -45,12 +45,30 @@ class FaceOverlayView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
+    private val leftEyeRoiPaint = Paint().apply {
+        color = Color.CYAN
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+        isAntiAlias = true
+    }
+
+    private val rightEyeRoiPaint = Paint().apply {
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+        isAntiAlias = true
+    }
+
     private var landmarks: List<PointF> = emptyList()
     private var faceBox: RectF? = null
     private var leftEyePoints: List<PointF> = emptyList()
     private var rightEyePoints: List<PointF> = emptyList()
     private var leftIrisPoints: List<PointF> = emptyList()
     private var rightIrisPoints: List<PointF> = emptyList()
+
+    private var leftEyeRoiRect: RectF? = null
+    private var rightEyeRoiRect: RectF? = null
+
     private var imageWidth: Int = 0
     private var imageHeight: Int = 0
     private var faceDetected: Boolean = false
@@ -62,6 +80,8 @@ class FaceOverlayView @JvmOverloads constructor(
         rightEyePoints: List<PointF>,
         leftIrisPoints: List<PointF>,
         rightIrisPoints: List<PointF>,
+        leftEyeRoiRect: RectF?,
+        rightEyeRoiRect: RectF?,
         imageWidth: Int,
         imageHeight: Int,
         faceDetected: Boolean
@@ -72,6 +92,8 @@ class FaceOverlayView @JvmOverloads constructor(
         this.rightEyePoints = rightEyePoints
         this.leftIrisPoints = leftIrisPoints
         this.rightIrisPoints = rightIrisPoints
+        this.leftEyeRoiRect = leftEyeRoiRect
+        this.rightEyeRoiRect = rightEyeRoiRect
         this.imageWidth = imageWidth
         this.imageHeight = imageHeight
         this.faceDetected = faceDetected
@@ -114,6 +136,26 @@ class FaceOverlayView @JvmOverloads constructor(
 
         for (pt in rightIrisPoints) {
             canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 4f, irisPaint)
+        }
+
+        leftEyeRoiRect?.let { rect ->
+            canvas.drawRect(
+                rect.left * scaleX,
+                rect.top * scaleY,
+                rect.right * scaleX,
+                rect.bottom * scaleY,
+                leftEyeRoiPaint
+            )
+        }
+
+        rightEyeRoiRect?.let { rect ->
+            canvas.drawRect(
+                rect.left * scaleX,
+                rect.top * scaleY,
+                rect.right * scaleX,
+                rect.bottom * scaleY,
+                rightEyeRoiPaint
+            )
         }
     }
 }

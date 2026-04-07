@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var guideText: TextView
     private lateinit var fpsText: TextView
     private lateinit var debugText: TextView
+
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
 
@@ -34,12 +35,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var ttsReady = false
     private var lastSpokenGuide = ""
     private var lastSpeakTime = 0L
-    private val speakInterval = 3000L   // 3초마다 반복 안내
+    private val speakInterval = 3000L
 
     private val requestCodeCamera = 100
 
     private var currentCameraMode = CameraMode.FRONT
     private var currentTorchOn = false
+
     private var boundCamera: Camera? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -85,11 +87,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val now = System.currentTimeMillis()
 
-        // 메시지가 바뀌었거나, 같은 단계가 3초 이상 유지되면 다시 읽기
         if (message != lastSpokenGuide || now - lastSpeakTime >= speakInterval) {
             lastSpokenGuide = message
             lastSpeakTime = now
-
             tts?.stop()
             tts?.speak(
                 message,
@@ -121,9 +121,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val preview = Preview.Builder()
             .build()
-            .also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
         val imageAnalyzer = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -144,6 +142,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                                 rightEyePoints = result.rightEyePoints,
                                 leftIrisPoints = result.leftIrisPoints,
                                 rightIrisPoints = result.rightIrisPoints,
+                                leftEyeRoiRect = result.leftEyeRoiRect,
+                                rightEyeRoiRect = result.rightEyeRoiRect,
                                 imageWidth = result.imageWidth,
                                 imageHeight = result.imageHeight,
                                 faceDetected = result.faceDetected
@@ -170,6 +170,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         try {
             provider.unbindAll()
+
             boundCamera = provider.bindToLifecycle(
                 this,
                 selectorFor(mode),
@@ -195,7 +196,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     @Deprecated("Deprecated in Java")
     override fun onRequestPermissionsResult(
         requestCode: Int,
-        permissions: Array<out String>,
+        permissions: Array<String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -213,7 +214,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onDestroy()
         faceLandmarkerHelper.clear()
         cameraExecutor.shutdown()
-
         tts?.stop()
         tts?.shutdown()
         tts = null
