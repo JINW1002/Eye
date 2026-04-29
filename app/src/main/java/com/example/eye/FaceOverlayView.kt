@@ -41,6 +41,20 @@ class FaceOverlayView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
+    private val guideBoxPaint = Paint().apply {
+        color = Color.rgb(180, 80, 255)
+        style = Paint.Style.STROKE
+        strokeWidth = 6f
+        isAntiAlias = true
+    }
+
+    private val guideTextPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 38f
+        textAlign = Paint.Align.CENTER
+        isAntiAlias = true
+    }
+
     private var faceBox: RectF? = null
     private var leftIrisPoints: List<PointF> = emptyList()
     private var rightIrisPoints: List<PointF> = emptyList()
@@ -77,6 +91,8 @@ class FaceOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        drawEyeGuideBoxes(canvas)
 
         if (!faceDetected || imageWidth == 0 || imageHeight == 0) return
 
@@ -120,5 +136,40 @@ class FaceOverlayView @JvmOverloads constructor(
         for (pt in rightIrisPoints) {
             canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 5f, irisPaint)
         }
+    }
+
+    private fun drawEyeGuideBoxes(canvas: Canvas) {
+        if (width <= 0 || height <= 0) return
+
+        val boxWidth = width * 0.28f
+        val boxHeight = height * 0.13f
+
+        val centerY = height * 0.42f
+        val leftCenterX = width * 0.36f
+        val rightCenterX = width * 0.64f
+
+        val leftBox = RectF(
+            leftCenterX - boxWidth / 2f,
+            centerY - boxHeight / 2f,
+            leftCenterX + boxWidth / 2f,
+            centerY + boxHeight / 2f
+        )
+
+        val rightBox = RectF(
+            rightCenterX - boxWidth / 2f,
+            centerY - boxHeight / 2f,
+            rightCenterX + boxWidth / 2f,
+            centerY + boxHeight / 2f
+        )
+
+        canvas.drawRect(leftBox, guideBoxPaint)
+        canvas.drawRect(rightBox, guideBoxPaint)
+
+        canvas.drawText(
+            "양쪽 눈을 박스 안에 크게 맞추세요",
+            width / 2f,
+            centerY - boxHeight,
+            guideTextPaint
+        )
     }
 }

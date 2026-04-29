@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var csvLogger: ScreeningCsvLogger
 
     private val protocolManager = ProtocolManager()
+    private val sessionState = ScreeningSessionState()
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -108,6 +109,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (message != lastSpokenGuide || now - lastSpeakTime >= speakInterval) {
             lastSpokenGuide = message
             lastSpeakTime = now
+
             tts?.stop()
             tts?.speak(
                 message,
@@ -137,6 +139,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun bindUseCases(mode: CameraMode) {
         val provider = cameraProvider ?: return
 
+        turnOffTorchSafely()
+
         val preview = Preview.Builder()
             .build()
             .also { it.setSurfaceProvider(previewView.surfaceProvider) }
@@ -147,56 +151,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .also { analysis ->
                 analysis.setAnalyzer(
                     cameraExecutor,
-                    FrameAnalyzer(faceLandmarkerHelper, protocolManager, mode) { result ->
+                    FrameAnalyzer(
+                        faceLandmarkerHelper = faceLandmarkerHelper,
+                        protocolManager = protocolManager,
+                        sessionState = sessionState,
+                        cameraMode = mode
+                    ) { result ->
                         runOnUiThread {
-                            guideText.text = result.guideMessage
-                            fpsText.text = result.fpsText
-                            subtitleText.text = buildSubtitle(result)
-
-                            // 기본은 숨김
-                            debugText.visibility = View.GONE
-
-                            overlayView.setResults(
-                                landmarks = result.landmarks,
-                                faceBox = result.faceBox,
-                                leftEyePoints = result.leftEyePoints,
-                                rightEyePoints = result.rightEyePoints,
-                                leftIrisPoints = result.leftIrisPoints,
-                                rightIrisPoints = result.rightIrisPoints,
-                                leftEyeRoiRect = result.leftEyeRoiRect,
-                                rightEyeRoiRect = result.rightEyeRoiRect,
-                                imageWidth = result.imageWidth,
-                                imageHeight = result.imageHeight,
-                                faceDetected = result.faceDetected
-                            )
-
-                            if (result.isFinalResult) {
-                                resultCard.visibility = View.VISIBLE
-                                resultValueText.text = result.finalResultLabel
-                                resultReasonText.text = result.finalResultReason
-                            } else {
-                                resultCard.visibility = View.GONE
-                            }
-
-                            speakGuideMessage(result.guideMessage)
-
-                            if (result.requestedCameraMode != currentCameraMode) {
-                                currentCameraMode = result.requestedCameraMode
-                                bindUseCases(currentCameraMode)
-                                return@runOnUiThread
-                            }
-
-                            if (result.requestTorchOn != currentTorchOn) {
-                                currentTorchOn = result.requestTorchOn
-                                if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
-                                    boundCamera?.cameraControl?.enableTorch(currentTorchOn)
-                                }
-                            }
-
-                            if (result.isFinalResult && !hasSavedFinalResult) {
-                                csvLogger.append(result)
-                                hasSavedFinalResult = true
-                            }
+                            handleAnalysisResult(result)
                         }
                     }
                 )
@@ -212,11 +174,107 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 imageAnalyzer
             )
 
-            if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
-                boundCamera?.cameraControl?.enableTorch(currentTorchOn)
-            }
+            applyTorch(currentTorchOn)
+
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun handleAnalysisResult(result: AnalysisResult) {
+        guideText.text = result.guideMessage
+        fpsText.text = result.fpsText
+        subtitleText.text = buildSubtitle(result)
+
+        debugText.visibility = View.GONE
+
+        overlayView.setResults(
+            landmarks = result.landmarks,
+            faceBox = result.faceBox,
+            leftEyePoints = result.leftEyePoints,
+            rightEyePoints = result.rightEyePoints,
+            leftIrisPoints = result.leftIrisPoints,
+            rightIrisPoints = result.rightIrisPoints,
+            leftEyeRoiRect = result.leftEyeRoiRect,
+            rightEyeRoiRect = result.rightEyeRoiRect,
+            imageWidth = result.imageWidth,
+            imageHeight = result.imageHeight,
+            faceDetected = result.faceDetected
+        )
+
+        if (result.isFinalResult) {
+            resultCard.visibility = View.VISIBLE
+            resultTitleText.text = "검사 결과"
+            resultValueText.text = result.finalResultLabel
+            resultReasonText.text = result.finalResultReason
+        } else {
+            resultCard.visibility = View.GONE
+        }
+
+        speakGuideMessage(result.guideMessage)
+
+        if (result.requestedCameraMode != currentCameraMode) {
+            currentTorchOn = false
+            turnOffTorchSafely()
+
+            currentCameraMode = result.requestedCameraMode
+            bindUseCases(currentCameraMode)
+            return
+        }
+
+        if (result.requestTorchOn != currentTorchOn) {
+            currentTorchOn = result.requestTorchOn
+            applyTorch(currentTorchOn)
+        }
+
+        if (result.isFinalResult) {
+            currentTorchOn = false
+            turnOffTorchSafely()
+        }
+
+        if (result.isFinalResult && !hasSavedFinalResult) {
+            csvLogger.append(result)
+            hasSavedFinalResult = true
+        }
+    }
+
+    private fun applyTorch(enabled: Boolean) {
+        val camera = boundCamera ?: return
+
+        if (currentCameraMode != CameraMode.BACK) {
+            camera.cameraControl.enableTorch(false)
+            return
+        }
+
+        if (camera.cameraInfo.hasFlashUnit()) {
+            camera.cameraControl.enableTorch(enabled)
+        }
+    }
+
+    private fun turnOffTorchSafely() {
+        boundCamera?.let { camera ->
+            if (camera.cameraInfo.hasFlashUnit()) {
+                camera.cameraControl.enableTorch(false)
+            }
+        }
+    }
+
+    private fun resetScreening() {
+        protocolManager.reset()
+        sessionState.reset()
+
+        hasSavedFinalResult = false
+        lastSpokenGuide = ""
+        lastSpeakTime = 0L
+
+        resultCard.visibility = View.GONE
+
+        currentTorchOn = false
+        turnOffTorchSafely()
+
+        if (currentCameraMode != CameraMode.FRONT) {
+            currentCameraMode = CameraMode.FRONT
+            bindUseCases(currentCameraMode)
         }
     }
 
@@ -257,8 +315,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        currentTorchOn = false
+        turnOffTorchSafely()
+
         faceLandmarkerHelper.clear()
         cameraExecutor.shutdown()
+
         tts?.stop()
         tts?.shutdown()
         tts = null

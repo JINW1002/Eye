@@ -9,6 +9,7 @@ import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult
 class FrameAnalyzer(
     private val faceLandmarkerHelper: FaceLandmarkerHelper,
     private val protocolManager: ProtocolManager,
+    private val sessionState: ScreeningSessionState,
     private val cameraMode: CameraMode,
     private val onResult: (AnalysisResult) -> Unit
 ) : ImageAnalysis.Analyzer {
@@ -16,9 +17,6 @@ class FrameAnalyzer(
     private var frameCount = 0
     private var fps = 0.0
     private var lastFpsTime = System.currentTimeMillis()
-
-    private val scoreAccumulator = StrabismusScoreAccumulator(maxFrames = 20)
-    private val coverTestTracker = CoverTestTracker()
 
     override fun analyze(image: ImageProxy) {
         frameCount++
@@ -32,6 +30,9 @@ class FrameAnalyzer(
         }
 
         try {
+            val scoreAccumulator = sessionState.scoreAccumulator
+            val coverTestTracker = sessionState.coverTestTracker
+
             val bitmap = FaceLandmarkerHelper.imageProxyToBitmap(image)
             val rotatedBitmap = FaceLandmarkerHelper.rotateBitmap(
                 bitmap = bitmap,
@@ -149,7 +150,8 @@ class FrameAnalyzer(
                     leftRect = eyeRoiResult.leftEyeRect,
                     rightRect = eyeRoiResult.rightEyeRect,
                     leftBitmap = eyeRoiResult.leftEyeBitmap,
-                    rightBitmap = eyeRoiResult.rightEyeBitmap
+                    rightBitmap = eyeRoiResult.rightEyeBitmap,
+                    reflectionMode = cameraMode == CameraMode.BACK
                 )
 
                 leftEyeRoiScore = qualityResult.leftScore
@@ -196,14 +198,27 @@ class FrameAnalyzer(
                 alignmentSuspected = alignmentResult.suspected
                 alignmentReason = alignmentResult.reason
 
-                val reflectionResult = ReflectionScorer.score(
-                    bothEyesReady = bothEyesReady,
-                    irisHorizontalDiff = irisHorizontalDiff,
-                    irisVerticalDiff = irisVerticalDiff
-                )
-                reflectionScore = reflectionResult.score
-                reflectionSuspected = reflectionResult.suspected
-                reflectionReason = reflectionResult.reason
+                if (cameraMode == CameraMode.BACK) {
+                    val hirschbergResult = HirschbergAnalyzer.analyze(
+                        leftBitmap = eyeRoiResult.leftEyeBitmap,
+                        rightBitmap = eyeRoiResult.rightEyeBitmap
+                    )
+
+                    val reflectionResult = ReflectionScorer.score(
+                        bothEyesReady = bothEyesReady,
+                        hirschbergResult = hirschbergResult
+                    )
+
+                    sessionState.updateReflection(reflectionResult)
+
+                    reflectionScore = reflectionResult.score
+                    reflectionSuspected = reflectionResult.suspected
+                    reflectionReason = reflectionResult.reason
+                } else {
+                    reflectionScore = sessionState.savedReflectionScore
+                    reflectionSuspected = sessionState.savedReflectionSuspected
+                    reflectionReason = sessionState.savedReflectionReason
+                }
 
                 coverTestTracker.updateBaseline(
                     bothEyesReady = bothEyesReady,
@@ -306,6 +321,7 @@ class FrameAnalyzer(
 
                 append("alignmentScore: %.2f\n".format(alignmentScore))
                 append("reflectionScore: %.2f\n".format(reflectionScore))
+                append("reflectionSuspected: $reflectionSuspected\n")
                 append("coverScore: %.2f\n".format(coverScore))
                 append("rightCoverShift: %.3f\n".format(rightCoverShift))
                 append("leftCoverShift: %.3f\n".format(leftCoverShift))
@@ -336,25 +352,31 @@ class FrameAnalyzer(
                 fpsText = "FPS: %.1f".format(fps),
                 debugText = roiDebug,
                 faceDetected = faceDetected,
+
                 landmarks = landmarks,
                 faceBox = faceBox,
+
                 leftEyePoints = leftEyePoints,
                 rightEyePoints = rightEyePoints,
                 leftIrisPoints = leftIrisPoints,
                 rightIrisPoints = rightIrisPoints,
+
                 leftEyeRoiRect = leftEyeRoiRect,
                 rightEyeRoiRect = rightEyeRoiRect,
                 leftEyeRoiValid = leftEyeRoiValid,
                 rightEyeRoiValid = rightEyeRoiValid,
+
                 leftEyeRoiScore = leftEyeRoiScore,
                 rightEyeRoiScore = rightEyeRoiScore,
                 bothEyeRoiValid = bothEyeRoiValid,
                 roiQualityReason = roiQualityReason,
+
                 leftEyeCenter = leftEyeCenter,
                 rightEyeCenter = rightEyeCenter,
                 leftIrisCenter = leftIrisCenter,
                 rightIrisCenter = rightIrisCenter,
                 bothEyesReady = bothEyesReady,
+
                 leftIrisNormalizedX = leftIrisNormalizedX,
                 leftIrisNormalizedY = leftIrisNormalizedY,
                 rightIrisNormalizedX = rightIrisNormalizedX,
@@ -364,29 +386,36 @@ class FrameAnalyzer(
                 alignmentScore = alignmentScore,
                 alignmentSuspected = alignmentSuspected,
                 alignmentReason = alignmentReason,
+
                 reflectionScore = reflectionScore,
                 reflectionSuspected = reflectionSuspected,
                 reflectionReason = reflectionReason,
+
                 rightCoverShift = rightCoverShift,
                 leftCoverShift = leftCoverShift,
                 coverScore = coverScore,
                 coverSuspected = coverSuspected,
                 coverReason = coverReason,
+
                 strabismusScore = strabismusScore,
                 strabismusSuspected = strabismusSuspected,
                 strabismusLabel = strabismusLabel,
                 strabismusReason = strabismusReason,
+
                 accumulatedScore = accumulatedScore,
                 accumulatedFrameCount = accumulatedFrameCount,
                 accumulatedSuspected = accumulatedSuspected,
                 accumulatedLabel = accumulatedLabel,
                 accumulatedReason = accumulatedReason,
+
                 isFinalResult = finalResultReady,
                 finalResultLabel = finalLabel,
                 finalResultScore = finalScore,
                 finalResultReason = finalReason,
+
                 imageWidth = rotatedBitmap.width,
                 imageHeight = rotatedBitmap.height,
+
                 requestedCameraMode = requestedCameraMode,
                 requestTorchOn = requestTorchOn
             )

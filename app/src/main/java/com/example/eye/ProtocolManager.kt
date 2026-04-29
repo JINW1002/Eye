@@ -41,44 +41,6 @@ class ProtocolManager {
         }
     }
 
-    private fun restartCurrentPhase(): Triple<String, CameraMode, Boolean> {
-        phaseStartTime = now()
-        stableStartTime = null
-
-        val requestedCameraMode = requestedCameraModeForPhase()
-        val torchOn = phase == ScreeningPhase.REFLECTION_BACK_CAPTURE
-
-        val bottom = when (phase) {
-            ScreeningPhase.ALIGN_FRONT ->
-                "얼굴과 양쪽 눈이 잘 보이도록 다시 맞춰주세요."
-
-            ScreeningPhase.REFLECTION_BACK_PREPARE ->
-                "후면 카메라에서 양쪽 눈이 잘 보이도록 다시 맞춰주세요."
-
-            ScreeningPhase.REFLECTION_BACK_CAPTURE ->
-                "반사광 검사를 다시 진행합니다. 눈을 안정적으로 유지해주세요."
-
-            ScreeningPhase.COVER_RIGHT_PREPARE,
-            ScreeningPhase.COVER_RIGHT_COVER_1,
-            ScreeningPhase.COVER_RIGHT_UNCOVER_1,
-            ScreeningPhase.COVER_RIGHT_COVER_2,
-            ScreeningPhase.COVER_RIGHT_UNCOVER_2 ->
-                "오른쪽 눈 검사를 다시 시작합니다."
-
-            ScreeningPhase.COVER_LEFT_PREPARE,
-            ScreeningPhase.COVER_LEFT_COVER_1,
-            ScreeningPhase.COVER_LEFT_UNCOVER_1,
-            ScreeningPhase.COVER_LEFT_COVER_2,
-            ScreeningPhase.COVER_LEFT_UNCOVER_2 ->
-                "왼쪽 눈 검사를 다시 시작합니다."
-
-            ScreeningPhase.RESULT ->
-                "결과 화면입니다."
-        }
-
-        return Triple("현재 단계를 다시 수행합니다.\n$bottom", requestedCameraMode, torchOn)
-    }
-
     private fun isStableFor(condition: Boolean, requiredMs: Long): Boolean {
         val current = now()
 
@@ -92,7 +54,7 @@ class ProtocolManager {
             return false
         }
 
-        return (current - stableStartTime!!) >= requiredMs
+        return current - stableStartTime!! >= requiredMs
     }
 
     private fun makeMessage(top: String, bottom: String): String {
@@ -122,7 +84,7 @@ class ProtocolManager {
         return when {
             !faceDetected -> {
                 if (targetMode == CameraMode.BACK) {
-                    "후면 카메라에서 얼굴을 보여주세요."
+                    "후면 카메라에서 양쪽 눈을 크게 보여주세요."
                 } else {
                     "얼굴을 화면 중앙에 맞춰주세요."
                 }
@@ -130,18 +92,70 @@ class ProtocolManager {
 
             !faceCentered -> {
                 if (targetMode == CameraMode.BACK) {
-                    "후면 카메라에서 얼굴을 중앙에 맞춰주세요."
+                    "양쪽 눈이 화면 중앙에 크게 보이도록 가까이 맞춰주세요."
                 } else {
                     "얼굴을 중앙에 맞춰주세요."
                 }
             }
 
             !bothEyeRoiValid -> {
-                "양쪽 눈이 모두 잘 보이게 해주세요.\n$roiQualityReason\n눈을 더 가까이 보여주세요."
+                if (targetMode == CameraMode.BACK) {
+                    "반사광 검사를 위해 양쪽 눈을 더 크게 보여주세요.\n$roiQualityReason\n플래시 쪽을 바라봐주세요."
+                } else {
+                    "양쪽 눈이 모두 잘 보이게 해주세요.\n$roiQualityReason\n눈을 더 가까이 보여주세요."
+                }
             }
 
-            else -> "얼굴과 눈이 확인되었습니다."
+            else -> {
+                if (targetMode == CameraMode.BACK) {
+                    "양쪽 눈이 크게 확인되었습니다."
+                } else {
+                    "얼굴과 눈이 확인되었습니다."
+                }
+            }
         }
+    }
+
+    private fun restartCurrentPhase(): Triple<String, CameraMode, Boolean> {
+        phaseStartTime = now()
+        stableStartTime = null
+
+        val requestedCameraMode = requestedCameraModeForPhase()
+        val torchOn = phase == ScreeningPhase.REFLECTION_BACK_CAPTURE
+
+        val bottom = when (phase) {
+            ScreeningPhase.ALIGN_FRONT ->
+                "얼굴과 양쪽 눈이 잘 보이도록 다시 맞춰주세요."
+
+            ScreeningPhase.COVER_RIGHT_PREPARE,
+            ScreeningPhase.COVER_RIGHT_COVER_1,
+            ScreeningPhase.COVER_RIGHT_UNCOVER_1,
+            ScreeningPhase.COVER_RIGHT_COVER_2,
+            ScreeningPhase.COVER_RIGHT_UNCOVER_2 ->
+                "오른쪽 눈 검사를 다시 시작합니다."
+
+            ScreeningPhase.COVER_LEFT_PREPARE,
+            ScreeningPhase.COVER_LEFT_COVER_1,
+            ScreeningPhase.COVER_LEFT_UNCOVER_1,
+            ScreeningPhase.COVER_LEFT_COVER_2,
+            ScreeningPhase.COVER_LEFT_UNCOVER_2 ->
+                "왼쪽 눈 검사를 다시 시작합니다."
+
+            ScreeningPhase.REFLECTION_BACK_PREPARE ->
+                "후면 카메라에서 양쪽 눈을 크게 맞춰주세요."
+
+            ScreeningPhase.REFLECTION_BACK_CAPTURE ->
+                "반사광 검사를 다시 진행합니다. 양쪽 눈을 크게 보여주고 플래시를 바라봐주세요."
+
+            ScreeningPhase.RESULT ->
+                "결과 화면입니다."
+        }
+
+        return Triple(
+            "현재 단계를 다시 수행합니다.\n$bottom",
+            requestedCameraMode,
+            torchOn
+        )
     }
 
     private fun finalizeResult(
@@ -151,7 +165,13 @@ class ProtocolManager {
         accumulatedReason: String
     ) {
         finalScore = accumulatedScore
-        finalLabel = if (accumulatedFrameCount < 5) "판정불가" else accumulatedLabel
+
+        finalLabel = if (accumulatedFrameCount < 5) {
+            "판정불가"
+        } else {
+            accumulatedLabel
+        }
+
         finalReason = if (accumulatedFrameCount < 5) {
             "유효 프레임 수가 부족하여 최종 판정을 내리기 어렵습니다."
         } else {
@@ -183,7 +203,11 @@ class ProtocolManager {
         when (phase) {
             ScreeningPhase.ALIGN_FRONT -> {
                 val ready = readyCommon(
-                    activeCameraMode, CameraMode.FRONT, faceDetected, faceCentered, bothEyeRoiValid
+                    activeCameraMode = activeCameraMode,
+                    targetMode = CameraMode.FRONT,
+                    faceDetected = faceDetected,
+                    faceCentered = faceCentered,
+                    bothEyeRoiValid = bothEyeRoiValid
                 )
 
                 if (!ready) {
@@ -196,7 +220,7 @@ class ProtocolManager {
                                 roiQualityReason,
                                 CameraMode.FRONT
                             ),
-                            "양쪽 눈 ROI 품질이 안정적으로 확보되면 다음 단계로 넘어갑니다."
+                            "양쪽 눈 ROI 품질이 안정적으로 확보되면 눈가림 검사를 시작합니다."
                         ),
                         requestedCameraMode,
                         torchOn
@@ -204,9 +228,12 @@ class ProtocolManager {
                 }
 
                 if (isStableFor(ready, 1200L)) {
-                    transition(ScreeningPhase.REFLECTION_BACK_PREPARE)
+                    transition(ScreeningPhase.COVER_RIGHT_PREPARE)
                     return Triple(
-                        makeMessage("얼굴이 확인되었습니다.", "후면 카메라 단계로 전환합니다."),
+                        makeMessage(
+                            "얼굴이 확인되었습니다.",
+                            "오른쪽 눈 가림 검사를 준비합니다."
+                        ),
                         requestedCameraModeForPhase(),
                         false
                     )
@@ -215,87 +242,10 @@ class ProtocolManager {
                 if (elapsedMs() >= 7000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("얼굴이 확인되었습니다.", "양쪽 눈이 잘 보입니다. 결과가 나오면 다음 단계로 넘어갑니다."),
-                    requestedCameraMode,
-                    torchOn
-                )
-            }
-
-            ScreeningPhase.REFLECTION_BACK_PREPARE -> {
-                val ready = readyCommon(
-                    activeCameraMode, CameraMode.BACK, faceDetected, faceCentered, bothEyeRoiValid
-                )
-
-                if (!ready) {
-                    return Triple(
-                        makeMessage(
-                            eyeQualityGuide(
-                                faceDetected,
-                                faceCentered,
-                                bothEyeRoiValid,
-                                roiQualityReason,
-                                CameraMode.BACK
-                            ),
-                            "후면 카메라에서 양쪽 눈이 안정적으로 보이면 반사광 검사를 시작합니다."
-                        ),
-                        requestedCameraMode,
-                        torchOn
-                    )
-                }
-
-                if (isStableFor(ready, 1200L)) {
-                    transition(ScreeningPhase.REFLECTION_BACK_CAPTURE)
-                    return Triple(
-                        makeMessage("얼굴이 확인되었습니다.", "반사광 검사를 시작합니다. 결과가 나오면 다음 단계로 넘어갑니다."),
-                        requestedCameraModeForPhase(),
-                        true
-                    )
-                }
-
-                if (elapsedMs() >= 8000L) return restartCurrentPhase()
-
-                return Triple(
-                    makeMessage("얼굴이 확인되었습니다.", "후면 카메라 준비가 진행 중입니다. 그대로 유지해주세요."),
-                    requestedCameraMode,
-                    torchOn
-                )
-            }
-
-            ScreeningPhase.REFLECTION_BACK_CAPTURE -> {
-                val ready = readyCommon(
-                    activeCameraMode, CameraMode.BACK, faceDetected, faceCentered, bothEyeRoiValid
-                )
-
-                if (!ready) {
-                    return Triple(
-                        makeMessage(
-                            eyeQualityGuide(
-                                faceDetected,
-                                faceCentered,
-                                bothEyeRoiValid,
-                                roiQualityReason,
-                                CameraMode.BACK
-                            ),
-                            "반사광 검사를 진행하려면 양쪽 눈이 안정적으로 보여야 합니다."
-                        ),
-                        requestedCameraMode,
-                        torchOn
-                    )
-                }
-
-                if (isStableFor(ready, 1800L)) {
-                    transition(ScreeningPhase.COVER_RIGHT_PREPARE)
-                    return Triple(
-                        makeMessage("얼굴이 확인되었습니다.", "오른쪽 눈 가림 검사를 준비합니다."),
-                        requestedCameraModeForPhase(),
-                        false
-                    )
-                }
-
-                if (elapsedMs() >= 9000L) return restartCurrentPhase()
-
-                return Triple(
-                    makeMessage("얼굴이 확인되었습니다.", "반사광 검사가 진행 중입니다. 결과가 나오면 다음 단계로 넘어갑니다."),
+                    makeMessage(
+                        "얼굴이 확인되었습니다.",
+                        "양쪽 눈이 안정적으로 보이면 다음 단계로 넘어갑니다."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -303,7 +253,11 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_RIGHT_PREPARE -> {
                 val ready = readyCommon(
-                    activeCameraMode, CameraMode.FRONT, faceDetected, faceCentered, bothEyeRoiValid
+                    activeCameraMode,
+                    CameraMode.FRONT,
+                    faceDetected,
+                    faceCentered,
+                    bothEyeRoiValid
                 )
 
                 if (!ready) {
@@ -326,7 +280,10 @@ class ProtocolManager {
                 if (isStableFor(ready, 1000L)) {
                     transition(ScreeningPhase.COVER_RIGHT_COVER_1)
                     return Triple(
-                        makeMessage("오른쪽 눈을 가리세요.", "얼굴과 눈이 확인되었습니다. 안내에 따라 검사합니다."),
+                        makeMessage(
+                            "오른쪽 눈을 가리세요.",
+                            "첫 번째 가림을 진행합니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
@@ -335,7 +292,10 @@ class ProtocolManager {
                 if (elapsedMs() >= 7000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("얼굴이 확인되었습니다.", "오른쪽 눈 검사를 준비 중입니다."),
+                    makeMessage(
+                        "얼굴이 확인되었습니다.",
+                        "오른쪽 눈 검사를 준비 중입니다."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -343,18 +303,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_RIGHT_COVER_1 -> {
                 val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
+
                 if (rightCovered) {
                     transition(ScreeningPhase.COVER_RIGHT_UNCOVER_1)
                     return Triple(
-                        makeMessage("오른쪽 눈을 떼세요.", "첫 번째 가림이 확인되었습니다."),
+                        makeMessage(
+                            "오른쪽 눈을 떼세요.",
+                            "첫 번째 가림이 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("오른쪽 눈을 가리세요.", "ROI 점수 L: %.2f / R: %.2f".format(leftEyeRoiScore, rightEyeRoiScore)),
+                    makeMessage(
+                        "오른쪽 눈을 가리세요.",
+                        "손으로 오른쪽 눈을 완전히 가려주세요."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -362,18 +330,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_RIGHT_UNCOVER_1 -> {
                 val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
+
                 if (!rightCovered) {
                     transition(ScreeningPhase.COVER_RIGHT_COVER_2)
                     return Triple(
-                        makeMessage("오른쪽 눈을 다시 가리세요.", "첫 번째 떼기가 확인되었습니다."),
+                        makeMessage(
+                            "오른쪽 눈을 다시 가리세요.",
+                            "첫 번째 떼기가 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("오른쪽 눈을 떼세요.", "천천히 눈을 다시 보여주세요."),
+                    makeMessage(
+                        "오른쪽 눈을 떼세요.",
+                        "눈이 다시 보이도록 손을 떼주세요."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -381,18 +357,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_RIGHT_COVER_2 -> {
                 val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
+
                 if (rightCovered) {
                     transition(ScreeningPhase.COVER_RIGHT_UNCOVER_2)
                     return Triple(
-                        makeMessage("오른쪽 눈을 다시 떼세요.", "두 번째 가림이 확인되었습니다."),
+                        makeMessage(
+                            "오른쪽 눈을 다시 떼세요.",
+                            "두 번째 가림이 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("오른쪽 눈을 다시 가리세요.", "안내에 따라 검사를 진행합니다."),
+                    makeMessage(
+                        "오른쪽 눈을 다시 가리세요.",
+                        "두 번째 가림을 진행합니다."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -400,18 +384,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_RIGHT_UNCOVER_2 -> {
                 val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
+
                 if (!rightCovered) {
                     transition(ScreeningPhase.COVER_LEFT_PREPARE)
                     return Triple(
-                        makeMessage("오른쪽 눈 검사가 완료되었습니다.", "왼쪽 눈 가림 검사를 준비합니다."),
+                        makeMessage(
+                            "오른쪽 눈 검사가 완료되었습니다.",
+                            "왼쪽 눈 가림 검사를 준비합니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("오른쪽 눈을 다시 떼세요.", "눈을 다시 보여주세요."),
+                    makeMessage(
+                        "오른쪽 눈을 다시 떼세요.",
+                        "눈을 다시 보여주세요."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -419,7 +411,11 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_LEFT_PREPARE -> {
                 val ready = readyCommon(
-                    activeCameraMode, CameraMode.FRONT, faceDetected, faceCentered, bothEyeRoiValid
+                    activeCameraMode,
+                    CameraMode.FRONT,
+                    faceDetected,
+                    faceCentered,
+                    bothEyeRoiValid
                 )
 
                 if (!ready) {
@@ -442,7 +438,10 @@ class ProtocolManager {
                 if (isStableFor(ready, 1000L)) {
                     transition(ScreeningPhase.COVER_LEFT_COVER_1)
                     return Triple(
-                        makeMessage("왼쪽 눈을 가리세요.", "얼굴과 눈이 확인되었습니다. 안내에 따라 검사합니다."),
+                        makeMessage(
+                            "왼쪽 눈을 가리세요.",
+                            "첫 번째 가림을 진행합니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
@@ -451,7 +450,10 @@ class ProtocolManager {
                 if (elapsedMs() >= 7000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("얼굴이 확인되었습니다.", "왼쪽 눈 검사를 준비 중입니다."),
+                    makeMessage(
+                        "얼굴이 확인되었습니다.",
+                        "왼쪽 눈 검사를 준비 중입니다."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -459,18 +461,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_LEFT_COVER_1 -> {
                 val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+
                 if (leftCovered) {
                     transition(ScreeningPhase.COVER_LEFT_UNCOVER_1)
                     return Triple(
-                        makeMessage("왼쪽 눈을 떼세요.", "첫 번째 가림이 확인되었습니다."),
+                        makeMessage(
+                            "왼쪽 눈을 떼세요.",
+                            "첫 번째 가림이 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("왼쪽 눈을 가리세요.", "ROI 점수 L: %.2f / R: %.2f".format(leftEyeRoiScore, rightEyeRoiScore)),
+                    makeMessage(
+                        "왼쪽 눈을 가리세요.",
+                        "손으로 왼쪽 눈을 완전히 가려주세요."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -478,18 +488,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_LEFT_UNCOVER_1 -> {
                 val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+
                 if (!leftCovered) {
                     transition(ScreeningPhase.COVER_LEFT_COVER_2)
                     return Triple(
-                        makeMessage("왼쪽 눈을 다시 가리세요.", "첫 번째 떼기가 확인되었습니다."),
+                        makeMessage(
+                            "왼쪽 눈을 다시 가리세요.",
+                            "첫 번째 떼기가 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("왼쪽 눈을 떼세요.", "천천히 눈을 다시 보여주세요."),
+                    makeMessage(
+                        "왼쪽 눈을 떼세요.",
+                        "눈이 다시 보이도록 손을 떼주세요."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -497,18 +515,26 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_LEFT_COVER_2 -> {
                 val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+
                 if (leftCovered) {
                     transition(ScreeningPhase.COVER_LEFT_UNCOVER_2)
                     return Triple(
-                        makeMessage("왼쪽 눈을 다시 떼세요.", "두 번째 가림이 확인되었습니다."),
+                        makeMessage(
+                            "왼쪽 눈을 다시 떼세요.",
+                            "두 번째 가림이 확인되었습니다."
+                        ),
                         requestedCameraMode,
                         torchOn
                     )
                 }
+
                 if (elapsedMs() >= 12000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("왼쪽 눈을 다시 가리세요.", "안내에 따라 검사를 진행합니다."),
+                    makeMessage(
+                        "왼쪽 눈을 다시 가리세요.",
+                        "두 번째 가림을 진행합니다."
+                    ),
                     requestedCameraMode,
                     torchOn
                 )
@@ -516,26 +542,136 @@ class ProtocolManager {
 
             ScreeningPhase.COVER_LEFT_UNCOVER_2 -> {
                 val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+
                 if (!leftCovered) {
+                    transition(ScreeningPhase.REFLECTION_BACK_PREPARE)
+                    return Triple(
+                        makeMessage(
+                            "왼쪽 눈 검사가 완료되었습니다.",
+                            "이제 후면 카메라로 반사광 검사를 진행합니다."
+                        ),
+                        requestedCameraModeForPhase(),
+                        false
+                    )
+                }
+
+                if (elapsedMs() >= 12000L) return restartCurrentPhase()
+
+                return Triple(
+                    makeMessage(
+                        "왼쪽 눈을 다시 떼세요.",
+                        "눈을 다시 보여주세요."
+                    ),
+                    requestedCameraMode,
+                    torchOn
+                )
+            }
+
+            ScreeningPhase.REFLECTION_BACK_PREPARE -> {
+                val ready = readyCommon(
+                    activeCameraMode,
+                    CameraMode.BACK,
+                    faceDetected,
+                    faceCentered,
+                    bothEyeRoiValid
+                )
+
+                if (!ready) {
+                    return Triple(
+                        makeMessage(
+                            eyeQualityGuide(
+                                faceDetected,
+                                faceCentered,
+                                bothEyeRoiValid,
+                                roiQualityReason,
+                                CameraMode.BACK
+                            ),
+                            "논문 방식처럼 양쪽 눈을 크게 맞추면 반사광 검사를 시작합니다."
+                        ),
+                        requestedCameraMode,
+                        torchOn
+                    )
+                }
+
+                if (isStableFor(ready, 1200L)) {
+                    transition(ScreeningPhase.REFLECTION_BACK_CAPTURE)
+                    return Triple(
+                        makeMessage(
+                            "양쪽 눈이 크게 확인되었습니다.",
+                            "플래시를 바라보고 움직이지 마세요."
+                        ),
+                        requestedCameraModeForPhase(),
+                        true
+                    )
+                }
+
+                if (elapsedMs() >= 8000L) return restartCurrentPhase()
+
+                return Triple(
+                    makeMessage(
+                        "양쪽 눈이 크게 확인되었습니다.",
+                        "후면 카메라 준비 중입니다. 플래시 쪽을 바라봐주세요."
+                    ),
+                    requestedCameraMode,
+                    torchOn
+                )
+            }
+
+            ScreeningPhase.REFLECTION_BACK_CAPTURE -> {
+                val ready = readyCommon(
+                    activeCameraMode,
+                    CameraMode.BACK,
+                    faceDetected,
+                    faceCentered,
+                    bothEyeRoiValid
+                )
+
+                if (!ready) {
+                    return Triple(
+                        makeMessage(
+                            eyeQualityGuide(
+                                faceDetected,
+                                faceCentered,
+                                bothEyeRoiValid,
+                                roiQualityReason,
+                                CameraMode.BACK
+                            ),
+                            "반사광 검사는 양쪽 눈이 크게 보일 때만 진행됩니다."
+                        ),
+                        requestedCameraMode,
+                        torchOn
+                    )
+                }
+
+                if (isStableFor(ready, 1800L)) {
                     finalizeResult(
                         accumulatedScore,
                         accumulatedFrameCount,
                         accumulatedLabel,
                         accumulatedReason
                     )
+
                     transition(ScreeningPhase.RESULT)
+
                     return Triple(
-                        makeMessage("왼쪽 눈 검사가 완료되었습니다.", "검사 결과를 표시합니다."),
-                        requestedCameraMode,
-                        torchOn
+                        makeMessage(
+                            "반사광 검사가 완료되었습니다.",
+                            "검사 결과를 표시합니다."
+                        ),
+                        requestedCameraModeForPhase(),
+                        false
                     )
                 }
-                if (elapsedMs() >= 12000L) return restartCurrentPhase()
+
+                if (elapsedMs() >= 9000L) return restartCurrentPhase()
 
                 return Triple(
-                    makeMessage("왼쪽 눈을 다시 떼세요.", "눈을 다시 보여주세요."),
+                    makeMessage(
+                        "반사광 검사가 진행 중입니다.",
+                        "양쪽 눈을 크게 보여주고 플래시를 바라봐주세요."
+                    ),
                     requestedCameraMode,
-                    torchOn
+                    true
                 )
             }
 

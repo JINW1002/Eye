@@ -44,12 +44,21 @@ android {
 dependencies {
     val cameraxVersion = "1.3.0"
 
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
+    // 기존 MediaPipe: 아직 완전히 제거 전이면 남겨도 됨
     implementation("com.google.mediapipe:tasks-vision:latest.release")
+
+    // YOLO / TFLite 눈 검출용
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

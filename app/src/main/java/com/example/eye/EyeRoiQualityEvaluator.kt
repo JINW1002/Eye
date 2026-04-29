@@ -19,8 +19,12 @@ data class EyeRoiQualityResult(
 
 object EyeRoiQualityEvaluator {
 
-    private const val MIN_ROI_WIDTH = 60f
-    private const val MIN_ROI_HEIGHT = 40f
+    private const val DEFAULT_MIN_ROI_WIDTH = 60f
+    private const val DEFAULT_MIN_ROI_HEIGHT = 40f
+
+    private const val REFLECTION_MIN_ROI_WIDTH = 120f
+    private const val REFLECTION_MIN_ROI_HEIGHT = 80f
+
     private const val MIN_FINAL_SCORE = 0.45f
 
     fun evaluate(
@@ -29,18 +33,21 @@ object EyeRoiQualityEvaluator {
         leftRect: RectF?,
         rightRect: RectF?,
         leftBitmap: Bitmap?,
-        rightBitmap: Bitmap?
+        rightBitmap: Bitmap?,
+        reflectionMode: Boolean = false
     ): EyeRoiQualityResult {
         if (leftRect == null || rightRect == null || leftBitmap == null || rightBitmap == null) {
             return EyeRoiQualityResult(reason = "좌우 눈 ROI가 아직 충분하지 않습니다.")
         }
 
-        val leftSizeScore = calcSizeScore(leftRect, imageWidth, imageHeight)
-        val rightSizeScore = calcSizeScore(rightRect, imageWidth, imageHeight)
+        val minWidth = if (reflectionMode) REFLECTION_MIN_ROI_WIDTH else DEFAULT_MIN_ROI_WIDTH
+        val minHeight = if (reflectionMode) REFLECTION_MIN_ROI_HEIGHT else DEFAULT_MIN_ROI_HEIGHT
+
+        val leftSizeScore = calcSizeScore(leftRect, imageWidth, imageHeight, minWidth, minHeight)
+        val rightSizeScore = calcSizeScore(rightRect, imageWidth, imageHeight, minWidth, minHeight)
         val sizeScore = (leftSizeScore + rightSizeScore) / 2f
 
         val symmetryScore = calcSymmetryScore(leftRect, rightRect)
-
         val blurLeft = calcSharpnessScore(leftBitmap)
         val blurRight = calcSharpnessScore(rightBitmap)
 
@@ -52,10 +59,18 @@ object EyeRoiQualityEvaluator {
         val bothValid = leftValid && rightValid
 
         val reason = when {
-            !leftValid && !rightValid -> "양쪽 눈 ROI 품질이 낮습니다."
-            !leftValid -> "왼쪽 눈 ROI 품질이 낮습니다."
-            !rightValid -> "오른쪽 눈 ROI 품질이 낮습니다."
-            else -> "양쪽 눈 ROI 품질이 충분합니다."
+            reflectionMode && !bothValid ->
+                "반사광 검사를 위해 양쪽 눈을 더 크게 보여주세요."
+            !leftValid && !rightValid ->
+                "양쪽 눈 ROI 품질이 낮습니다."
+            !leftValid ->
+                "왼쪽 눈 ROI 품질이 낮습니다."
+            !rightValid ->
+                "오른쪽 눈 ROI 품질이 낮습니다."
+            reflectionMode ->
+                "반사광 검사를 위한 눈 크기가 충분합니다."
+            else ->
+                "양쪽 눈 ROI 품질이 충분합니다."
         }
 
         return EyeRoiQualityResult(
@@ -78,25 +93,28 @@ object EyeRoiQualityEvaluator {
         blurScore: Float
     ): Float {
         return (
-                sizeScore * 0.45f +
+                sizeScore * 0.50f +
                         symmetryScore * 0.20f +
-                        blurScore * 0.35f
+                        blurScore * 0.30f
                 ).coerceIn(0f, 1f)
     }
 
     private fun calcSizeScore(
         rect: RectF,
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        minWidth: Float,
+        minHeight: Float
     ): Float {
         val width = rect.width()
         val height = rect.height()
 
-        val widthScore = (width / MIN_ROI_WIDTH).coerceIn(0f, 1f)
-        val heightScore = (height / MIN_ROI_HEIGHT).coerceIn(0f, 1f)
+        val widthScore = (width / minWidth).coerceIn(0f, 1f)
+        val heightScore = (height / minHeight).coerceIn(0f, 1f)
 
         val normalizedArea = (width * height) / (imageWidth.toFloat() * imageHeight.toFloat())
-        val areaScore = (normalizedArea / 0.015f).coerceIn(0f, 1f)
+        val targetArea = if (minWidth >= 120f) 0.035f else 0.015f
+        val areaScore = (normalizedArea / targetArea).coerceIn(0f, 1f)
 
         return ((widthScore + heightScore + areaScore) / 3f).coerceIn(0f, 1f)
     }
@@ -145,7 +163,6 @@ object EyeRoiQualityEvaluator {
         if (count == 0) return 0f
 
         val avg = (sum / count).toFloat()
-
         return (avg / 40f).coerceIn(0f, 1f)
     }
 

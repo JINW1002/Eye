@@ -1,0 +1,5 @@
+background
+sclera
+iris
+pupil
+reflection
