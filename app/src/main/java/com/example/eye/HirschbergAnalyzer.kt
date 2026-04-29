@@ -144,28 +144,35 @@ object HirschbergAnalyzer {
 
         if (width < 30 || height < 20) return null
 
+        // 눈꺼풀, 피부, 눈물 라인 반사를 줄이기 위해 중앙 영역만 탐색
+        val minX = (width * 0.15f).toInt()
+        val maxX = (width * 0.85f).toInt()
+        val minY = (height * 0.20f).toInt()
+        val maxY = (height * 0.80f).toInt()
+
         var maxBrightness = 0
 
-        for (y in 0 until height step 2) {
-            for (x in 0 until width step 2) {
+        for (y in minY until maxY step 2) {
+            for (x in minX until maxX step 2) {
                 val b = brightness(bitmap.getPixel(x, y))
-                if (b > maxBrightness) maxBrightness = b
+                if (b > maxBrightness) {
+                    maxBrightness = b
+                }
             }
         }
 
-        if (maxBrightness < 180) return null
+        // 기존 180보다 낮춰 약한 반사광도 잡히게 함
+        if (maxBrightness < 160) return null
 
-        val threshold = (maxBrightness * 0.88f).toInt()
+        // 기존 0.88보다 낮춰 후보 픽셀을 조금 더 넓게 포함
+        val threshold = (maxBrightness * 0.82f).toInt()
 
         var sumX = 0.0
         var sumY = 0.0
         var count = 0
 
-        val minY = (height * 0.10f).toInt()
-        val maxY = (height * 0.90f).toInt()
-
         for (y in minY until maxY) {
-            for (x in 0 until width) {
+            for (x in minX until maxX) {
                 val b = brightness(bitmap.getPixel(x, y))
 
                 if (b >= threshold) {
