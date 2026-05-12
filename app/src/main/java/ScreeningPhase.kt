@@ -1,7 +1,11 @@
 package com.example.eye
 
 enum class ScreeningPhase {
+
     ALIGN_FRONT,
+
+    REFLECTION_BACK_PREPARE,
+    REFLECTION_BACK_CAPTURE,
 
     COVER_RIGHT_PREPARE,
     COVER_RIGHT_COVER_1,
@@ -14,9 +18,6 @@ enum class ScreeningPhase {
     COVER_LEFT_UNCOVER_1,
     COVER_LEFT_COVER_2,
     COVER_LEFT_UNCOVER_2,
-
-    REFLECTION_BACK_PREPARE,
-    REFLECTION_BACK_CAPTURE,
 
     RESULT
 }
