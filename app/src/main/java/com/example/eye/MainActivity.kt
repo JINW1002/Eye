@@ -189,17 +189,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         debugText.visibility = View.GONE
 
         overlayView.setResults(
-            landmarks = result.landmarks,
-            faceBox = result.faceBox,
-            leftEyePoints = result.leftEyePoints,
-            rightEyePoints = result.rightEyePoints,
-            leftIrisPoints = result.leftIrisPoints,
-            rightIrisPoints = result.rightIrisPoints,
             leftEyeRoiRect = result.leftEyeRoiRect,
             rightEyeRoiRect = result.rightEyeRoiRect,
+            bothEyesReady = result.bothEyesReady,
             imageWidth = result.imageWidth,
-            imageHeight = result.imageHeight,
-            faceDetected = result.faceDetected
+            imageHeight = result.imageHeight
         )
 
         if (result.isFinalResult) {

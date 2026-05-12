@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PointF
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
@@ -14,162 +13,80 @@ class FaceOverlayView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    private val facePaint = Paint().apply {
-        color = Color.GREEN
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-        isAntiAlias = true
-    }
-
-    private val leftEyeRoiPaint = Paint().apply {
-        color = Color.CYAN
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-        isAntiAlias = true
-    }
-
-    private val rightEyeRoiPaint = Paint().apply {
-        color = Color.RED
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-        isAntiAlias = true
-    }
-
-    private val irisPaint = Paint().apply {
-        color = Color.MAGENTA
-        style = Paint.Style.FILL
-        isAntiAlias = true
-    }
-
-    private val guideBoxPaint = Paint().apply {
-        color = Color.rgb(180, 80, 255)
+    private val guidePaint = Paint().apply {
+        color = Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 6f
         isAntiAlias = true
     }
 
-    private val guideTextPaint = Paint().apply {
-        color = Color.WHITE
-        textSize = 38f
-        textAlign = Paint.Align.CENTER
+    private val successPaint = Paint().apply {
+        color = Color.GREEN
+        style = Paint.Style.STROKE
+        strokeWidth = 8f
         isAntiAlias = true
     }
 
-    private var faceBox: RectF? = null
-    private var leftIrisPoints: List<PointF> = emptyList()
-    private var rightIrisPoints: List<PointF> = emptyList()
-    private var leftEyeRoiRect: RectF? = null
-    private var rightEyeRoiRect: RectF? = null
+    private var leftEyeGuideRect: RectF? = null
+    private var rightEyeGuideRect: RectF? = null
+
+    private var bothEyesReady: Boolean = false
 
     private var imageWidth: Int = 0
     private var imageHeight: Int = 0
-    private var faceDetected: Boolean = false
 
     fun setResults(
-        landmarks: List<PointF>,
-        faceBox: RectF?,
-        leftEyePoints: List<PointF>,
-        rightEyePoints: List<PointF>,
-        leftIrisPoints: List<PointF>,
-        rightIrisPoints: List<PointF>,
         leftEyeRoiRect: RectF?,
         rightEyeRoiRect: RectF?,
+        bothEyesReady: Boolean,
         imageWidth: Int,
-        imageHeight: Int,
-        faceDetected: Boolean
+        imageHeight: Int
     ) {
-        this.faceBox = faceBox
-        this.leftIrisPoints = leftIrisPoints
-        this.rightIrisPoints = rightIrisPoints
-        this.leftEyeRoiRect = leftEyeRoiRect
-        this.rightEyeRoiRect = rightEyeRoiRect
+        this.leftEyeGuideRect = leftEyeRoiRect
+        this.rightEyeGuideRect = rightEyeRoiRect
+        this.bothEyesReady = bothEyesReady
         this.imageWidth = imageWidth
         this.imageHeight = imageHeight
-        this.faceDetected = faceDetected
+
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        drawEyeGuideBoxes(canvas)
-
-        if (!faceDetected || imageWidth == 0 || imageHeight == 0) return
+        if (imageWidth == 0 || imageHeight == 0) return
 
         val scaleX = width.toFloat() / imageWidth.toFloat()
         val scaleY = height.toFloat() / imageHeight.toFloat()
 
-        faceBox?.let { box ->
-            canvas.drawRect(
-                box.left * scaleX,
-                box.top * scaleY,
-                box.right * scaleX,
-                box.bottom * scaleY,
-                facePaint
-            )
+        val paint = if (bothEyesReady) {
+            successPaint
+        } else {
+            guidePaint
         }
 
-        leftEyeRoiRect?.let { rect ->
-            canvas.drawRect(
+        leftEyeGuideRect?.let { rect ->
+            canvas.drawRoundRect(
                 rect.left * scaleX,
                 rect.top * scaleY,
                 rect.right * scaleX,
                 rect.bottom * scaleY,
-                leftEyeRoiPaint
+                20f,
+                20f,
+                paint
             )
         }
 
-        rightEyeRoiRect?.let { rect ->
-            canvas.drawRect(
+        rightEyeGuideRect?.let { rect ->
+            canvas.drawRoundRect(
                 rect.left * scaleX,
                 rect.top * scaleY,
                 rect.right * scaleX,
                 rect.bottom * scaleY,
-                rightEyeRoiPaint
+                20f,
+                20f,
+                paint
             )
         }
-
-        for (pt in leftIrisPoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 5f, irisPaint)
-        }
-
-        for (pt in rightIrisPoints) {
-            canvas.drawCircle(pt.x * scaleX, pt.y * scaleY, 5f, irisPaint)
-        }
-    }
-
-    private fun drawEyeGuideBoxes(canvas: Canvas) {
-        if (width <= 0 || height <= 0) return
-
-        val boxWidth = width * 0.28f
-        val boxHeight = height * 0.13f
-
-        val centerY = height * 0.42f
-        val leftCenterX = width * 0.36f
-        val rightCenterX = width * 0.64f
-
-        val leftBox = RectF(
-            leftCenterX - boxWidth / 2f,
-            centerY - boxHeight / 2f,
-            leftCenterX + boxWidth / 2f,
-            centerY + boxHeight / 2f
-        )
-
-        val rightBox = RectF(
-            rightCenterX - boxWidth / 2f,
-            centerY - boxHeight / 2f,
-            rightCenterX + boxWidth / 2f,
-            centerY + boxHeight / 2f
-        )
-
-        canvas.drawRect(leftBox, guideBoxPaint)
-        canvas.drawRect(rightBox, guideBoxPaint)
-
-        canvas.drawText(
-            "양쪽 눈을 박스 안에 크게 맞추세요",
-            width / 2f,
-            centerY - boxHeight,
-            guideTextPaint
-        )
     }
 }
