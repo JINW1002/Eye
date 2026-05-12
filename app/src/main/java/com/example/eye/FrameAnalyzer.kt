@@ -1,5 +1,6 @@
 package com.example.eye
 
+import android.graphics.Bitmap
 import android.graphics.PointF
 import android.graphics.RectF
 import androidx.camera.core.ImageAnalysis
@@ -18,11 +19,15 @@ class FrameAnalyzer(
     private var fps = 0.0
     private var lastFpsTime = System.currentTimeMillis()
 
+    private var previousRightEyeBitmap: Bitmap? = null
+    private var previousLeftEyeBitmap: Bitmap? = null
+
     override fun analyze(image: ImageProxy) {
         frameCount++
 
         val now = System.currentTimeMillis()
         val elapsed = now - lastFpsTime
+
         if (elapsed >= 1000) {
             fps = frameCount * 1000.0 / elapsed
             frameCount = 0
@@ -34,6 +39,7 @@ class FrameAnalyzer(
             val coverTestTracker = sessionState.coverTestTracker
 
             val bitmap = FaceLandmarkerHelper.imageProxyToBitmap(image)
+
             val rotatedBitmap = FaceLandmarkerHelper.rotateBitmap(
                 bitmap = bitmap,
                 rotationDegrees = image.imageInfo.rotationDegrees,
@@ -41,44 +47,57 @@ class FrameAnalyzer(
             )
 
             val result: FaceLandmarkerResult? = faceLandmarkerHelper.detect(rotatedBitmap)
-            val faceDetected = result != null && result.faceLandmarks().isNotEmpty()
+
+            val faceDetected =
+                result != null &&
+                        result.faceLandmarks().isNotEmpty()
 
             var landmarks: List<PointF> = emptyList()
             var faceBox: RectF? = null
 
             var leftEyePoints: List<PointF> = emptyList()
             var rightEyePoints: List<PointF> = emptyList()
+
             var leftIrisPoints: List<PointF> = emptyList()
             var rightIrisPoints: List<PointF> = emptyList()
 
             var leftEyeRoiRect: RectF? = null
             var rightEyeRoiRect: RectF? = null
+
             var leftEyeRoiValid = false
             var rightEyeRoiValid = false
             var bothEyeRoiValid = false
 
             var leftEyeRoiScore = 0f
             var rightEyeRoiScore = 0f
+
             var roiQualityReason = "ROI 없음"
 
             var faceCentered = false
+
             var leftEyeOpenRatio = 0f
             var rightEyeOpenRatio = 0f
+
             var leftIrisVisible = false
             var rightIrisVisible = false
 
             var leftEyeCenter: PointF? = null
             var rightEyeCenter: PointF? = null
+
             var leftIrisCenter: PointF? = null
             var rightIrisCenter: PointF? = null
+
             var bothEyesReady = false
 
             var leftIrisNormalizedX = 0f
             var leftIrisNormalizedY = 0f
+
             var rightIrisNormalizedX = 0f
             var rightIrisNormalizedY = 0f
+
             var irisHorizontalDiff = 0f
             var irisVerticalDiff = 0f
+
             var alignmentScore = 0f
             var alignmentSuspected = false
             var alignmentReason = "정렬 계산 전"
@@ -94,6 +113,7 @@ class FrameAnalyzer(
 
             var rightCoverShift = 0f
             var leftCoverShift = 0f
+
             var coverScore = 0f
             var coverSuspected = false
             var coverReason = "가림 검사 계산 전"
@@ -122,6 +142,7 @@ class FrameAnalyzer(
                 }
 
                 faceBox = FaceMathUtils.boundingBox(landmarks)
+
                 if (faceBox != null) {
                     faceCentered = FaceMathUtils.isFaceCentered(
                         faceBox,
@@ -130,71 +151,98 @@ class FrameAnalyzer(
                     )
                 }
 
-                leftEyePoints = FaceMeshIndices.LEFT_EYE.mapNotNull { landmarks.getOrNull(it) }
-                rightEyePoints = FaceMeshIndices.RIGHT_EYE.mapNotNull { landmarks.getOrNull(it) }
+                leftEyePoints =
+                    FaceMeshIndices.LEFT_EYE.mapNotNull {
+                        landmarks.getOrNull(it)
+                    }
 
-                leftIrisPoints = if (landmarks.size > FaceMeshIndices.LEFT_IRIS.max()) {
-                    FaceMeshIndices.LEFT_IRIS.mapNotNull { landmarks.getOrNull(it) }
-                } else emptyList()
+                rightEyePoints =
+                    FaceMeshIndices.RIGHT_EYE.mapNotNull {
+                        landmarks.getOrNull(it)
+                    }
 
-                rightIrisPoints = if (landmarks.size > FaceMeshIndices.RIGHT_IRIS.max()) {
-                    FaceMeshIndices.RIGHT_IRIS.mapNotNull { landmarks.getOrNull(it) }
-                } else emptyList()
+                leftIrisPoints =
+                    if (landmarks.size > FaceMeshIndices.LEFT_IRIS.max()) {
+                        FaceMeshIndices.LEFT_IRIS.mapNotNull {
+                            landmarks.getOrNull(it)
+                        }
+                    } else {
+                        emptyList()
+                    }
 
-                val eyeRoiResult = EyeRoiExtractor.extractEyeRois(
-                    bitmap = rotatedBitmap,
-                    landmarks = landmarks
-                )
+                rightIrisPoints =
+                    if (landmarks.size > FaceMeshIndices.RIGHT_IRIS.max()) {
+                        FaceMeshIndices.RIGHT_IRIS.mapNotNull {
+                            landmarks.getOrNull(it)
+                        }
+                    } else {
+                        emptyList()
+                    }
+
+                val eyeRoiResult =
+                    EyeRoiExtractor.extractEyeRois(
+                        bitmap = rotatedBitmap,
+                        landmarks = landmarks
+                    )
 
                 leftEyeRoiRect = eyeRoiResult.leftEyeRect
                 rightEyeRoiRect = eyeRoiResult.rightEyeRect
 
-                val qualityResult = EyeRoiQualityEvaluator.evaluate(
-                    imageWidth = rotatedBitmap.width,
-                    imageHeight = rotatedBitmap.height,
-                    leftRect = eyeRoiResult.leftEyeRect,
-                    rightRect = eyeRoiResult.rightEyeRect,
-                    leftBitmap = eyeRoiResult.leftEyeBitmap,
-                    rightBitmap = eyeRoiResult.rightEyeBitmap,
-                    reflectionMode = cameraMode == CameraMode.BACK
-                )
+                val qualityResult =
+                    EyeRoiQualityEvaluator.evaluate(
+                        imageWidth = rotatedBitmap.width,
+                        imageHeight = rotatedBitmap.height,
+                        leftRect = eyeRoiResult.leftEyeRect,
+                        rightRect = eyeRoiResult.rightEyeRect,
+                        leftBitmap = eyeRoiResult.leftEyeBitmap,
+                        rightBitmap = eyeRoiResult.rightEyeBitmap,
+                        reflectionMode = cameraMode == CameraMode.BACK
+                    )
 
                 leftEyeRoiScore = qualityResult.leftScore
                 rightEyeRoiScore = qualityResult.rightScore
+
                 leftEyeRoiValid = qualityResult.leftValid
                 rightEyeRoiValid = qualityResult.rightValid
                 bothEyeRoiValid = qualityResult.bothValid
+
                 roiQualityReason = qualityResult.reason
 
-                val eyeFeatureResult = EyeFeatureExtractor.extract(
-                    leftEyePoints = leftEyePoints,
-                    rightEyePoints = rightEyePoints,
-                    leftIrisPoints = leftIrisPoints,
-                    rightIrisPoints = rightIrisPoints,
-                    leftEyeRoiScore = leftEyeRoiScore,
-                    rightEyeRoiScore = rightEyeRoiScore
-                )
+                val eyeFeatureResult =
+                    EyeFeatureExtractor.extract(
+                        leftEyePoints = leftEyePoints,
+                        rightEyePoints = rightEyePoints,
+                        leftIrisPoints = leftIrisPoints,
+                        rightIrisPoints = rightIrisPoints,
+                        leftEyeRoiScore = leftEyeRoiScore,
+                        rightEyeRoiScore = rightEyeRoiScore
+                    )
 
                 leftEyeCenter = eyeFeatureResult.left.eyeCenter
                 rightEyeCenter = eyeFeatureResult.right.eyeCenter
+
                 leftIrisCenter = eyeFeatureResult.left.irisCenter
                 rightIrisCenter = eyeFeatureResult.right.irisCenter
+
                 bothEyesReady = eyeFeatureResult.bothEyesReady
 
                 leftEyeOpenRatio = eyeFeatureResult.left.eyeOpenRatio
                 rightEyeOpenRatio = eyeFeatureResult.right.eyeOpenRatio
+
                 leftIrisVisible = eyeFeatureResult.left.irisVisible
                 rightIrisVisible = eyeFeatureResult.right.irisVisible
 
-                val alignmentResult = EyeAlignmentAnalyzer.analyze(
-                    leftEyePoints = leftEyePoints,
-                    rightEyePoints = rightEyePoints,
-                    leftIrisCenter = leftIrisCenter,
-                    rightIrisCenter = rightIrisCenter
-                )
+                val alignmentResult =
+                    EyeAlignmentAnalyzer.analyze(
+                        leftEyePoints = leftEyePoints,
+                        rightEyePoints = rightEyePoints,
+                        leftIrisCenter = leftIrisCenter,
+                        rightIrisCenter = rightIrisCenter
+                    )
 
                 leftIrisNormalizedX = alignmentResult.left.normalizedX
                 leftIrisNormalizedY = alignmentResult.left.normalizedY
+
                 rightIrisNormalizedX = alignmentResult.right.normalizedX
                 rightIrisNormalizedY = alignmentResult.right.normalizedY
 
@@ -205,16 +253,18 @@ class FrameAnalyzer(
 
                 irisHorizontalDiff = alignmentResult.horizontalDiff
                 irisVerticalDiff = alignmentResult.verticalDiff
+
                 alignmentScore = alignmentResult.alignmentScore
                 alignmentSuspected = alignmentResult.suspected
                 alignmentReason = alignmentResult.reason
 
                 if (cameraMode == CameraMode.BACK) {
-                    val reflectionResult = ReflectionScorer.score(
-                        bothEyesReady = bothEyesReady,
-                        irisHorizontalDiff = irisHorizontalDiff,
-                        irisVerticalDiff = irisVerticalDiff
-                    )
+                    val reflectionResult =
+                        ReflectionScorer.score(
+                            bothEyesReady = bothEyesReady,
+                            irisHorizontalDiff = irisHorizontalDiff,
+                            irisVerticalDiff = irisVerticalDiff
+                        )
 
                     sessionState.updateReflection(reflectionResult)
 
@@ -227,23 +277,24 @@ class FrameAnalyzer(
                     reflectionReason = sessionState.savedReflectionReason
                 }
 
-                val rightCoverTrigger = isCoverTrigger(
-                    irisVisible = rightIrisVisible,
-                    eyeOpenRatio = rightEyeOpenRatio,
-                    eyeRoiValid = rightEyeRoiValid,
-                    eyeRoiScore = rightEyeRoiScore,
-                    otherEyeRoiScore = leftEyeRoiScore
-                )
+                val rightCoverTrigger =
+                    EyeMotionTrigger.detectCoverMotion(
+                        previous = previousRightEyeBitmap,
+                        current = eyeRoiResult.rightEyeBitmap
+                    )
 
-                val leftCoverTrigger = isCoverTrigger(
-                    irisVisible = leftIrisVisible,
-                    eyeOpenRatio = leftEyeOpenRatio,
-                    eyeRoiValid = leftEyeRoiValid,
-                    eyeRoiScore = leftEyeRoiScore,
-                    otherEyeRoiScore = rightEyeRoiScore
-                )
+                val leftCoverTrigger =
+                    EyeMotionTrigger.detectCoverMotion(
+                        previous = previousLeftEyeBitmap,
+                        current = eyeRoiResult.leftEyeBitmap
+                    )
 
-                val noEyeCovered = !rightCoverTrigger && !leftCoverTrigger
+                previousRightEyeBitmap = eyeRoiResult.rightEyeBitmap
+                previousLeftEyeBitmap = eyeRoiResult.leftEyeBitmap
+
+                val noEyeCovered =
+                    !rightCoverTrigger &&
+                            !leftCoverTrigger
 
                 coverTestTracker.updateBaseline(
                     bothEyesReady = bothEyesReady,
@@ -254,61 +305,102 @@ class FrameAnalyzer(
                     rightGazeY = rightGazeY
                 )
 
-                if (rightCoverTrigger && !leftCoverTrigger) {
+                if (
+                    rightCoverTrigger &&
+                    !leftCoverTrigger &&
+                    leftIrisVisible &&
+                    leftEyeRoiValid
+                ) {
                     coverTestTracker.recordRightCoverMovement(
-                        leftEyeReady = leftIrisVisible && leftEyeRoiValid,
+                        leftEyeReady = true,
                         currentLeftGazeX = leftGazeX,
                         currentLeftGazeY = leftGazeY
                     )
                 }
 
-                if (leftCoverTrigger && !rightCoverTrigger) {
+                if (
+                    leftCoverTrigger &&
+                    !rightCoverTrigger &&
+                    rightIrisVisible &&
+                    rightEyeRoiValid
+                ) {
                     coverTestTracker.recordLeftCoverMovement(
-                        rightEyeReady = rightIrisVisible && rightEyeRoiValid,
+                        rightEyeReady = true,
                         currentRightGazeX = rightGazeX,
                         currentRightGazeY = rightGazeY
                     )
                 }
 
-                val coverState = coverTestTracker.currentState()
+                val coverState =
+                    coverTestTracker.currentState()
+
                 rightCoverShift = coverState.rightCoverShift
                 leftCoverShift = coverState.leftCoverShift
+
                 coverScore = coverState.coverScore
                 coverSuspected = coverState.suspected
                 coverReason = coverState.reason
 
-                val strabismusResult = StrabismusScorer.score(
-                    bothEyesReady = bothEyesReady,
-                    alignmentScore = alignmentScore,
-                    reflectionScore = reflectionScore,
-                    coverScore = coverScore
-                )
+                val strabismusResult =
+                    StrabismusScorer.score(
+                        bothEyesReady = bothEyesReady,
+                        alignmentScore = alignmentScore,
+                        reflectionScore = reflectionScore,
+                        coverScore = coverScore
+                    )
 
                 strabismusScore = strabismusResult.score
                 strabismusSuspected = strabismusResult.suspected
                 strabismusLabel = strabismusResult.label
                 strabismusReason = strabismusResult.reason
 
-                val accumulatedResult = scoreAccumulator.addScore(
-                    validFrame = bothEyesReady && bothEyeRoiValid,
-                    score = strabismusScore
-                )
+                val accumulatedResult =
+                    scoreAccumulator.addScore(
+                        validFrame = bothEyesReady &&
+                                bothEyeRoiValid,
+                        score = strabismusScore
+                    )
 
-                accumulatedScore = accumulatedResult.averageScore
-                accumulatedFrameCount = accumulatedResult.frameCount
-                accumulatedSuspected = accumulatedResult.suspected
-                accumulatedLabel = accumulatedResult.label
-                accumulatedReason = accumulatedResult.reason
+                accumulatedScore =
+                    accumulatedResult.averageScore
+
+                accumulatedFrameCount =
+                    accumulatedResult.frameCount
+
+                accumulatedSuspected =
+                    accumulatedResult.suspected
+
+                accumulatedLabel =
+                    accumulatedResult.label
+
+                accumulatedReason =
+                    accumulatedResult.reason
             } else {
-                val accumulatedResult = scoreAccumulator.currentResult()
-                accumulatedScore = accumulatedResult.averageScore
-                accumulatedFrameCount = accumulatedResult.frameCount
-                accumulatedSuspected = accumulatedResult.suspected
-                accumulatedLabel = accumulatedResult.label
-                accumulatedReason = accumulatedResult.reason
+                previousRightEyeBitmap = null
+                previousLeftEyeBitmap = null
+
+                val accumulatedResult =
+                    scoreAccumulator.currentResult()
+
+                accumulatedScore =
+                    accumulatedResult.averageScore
+
+                accumulatedFrameCount =
+                    accumulatedResult.frameCount
+
+                accumulatedSuspected =
+                    accumulatedResult.suspected
+
+                accumulatedLabel =
+                    accumulatedResult.label
+
+                accumulatedReason =
+                    accumulatedResult.reason
             }
 
-            val (fullText, requestedCameraMode, requestTorchOn) = protocolManager.update(
+            val (fullText,
+                requestedCameraMode,
+                requestTorchOn) = protocolManager.update(
                 activeCameraMode = cameraMode,
                 faceDetected = faceDetected,
                 faceCentered = faceCentered,
@@ -327,86 +419,108 @@ class FrameAnalyzer(
             )
 
             val lines = fullText.split("\n")
-            val guideMessage = lines.firstOrNull() ?: ""
-            val debugText = lines.drop(1).joinToString("\n")
 
-            val finalResultReady = protocolManager.isInResultPhase()
-            val finalLabel = protocolManager.getFinalLabel()
-            val finalScore = protocolManager.getFinalScore()
-            val finalReason = protocolManager.getFinalReason()
+            val guideMessage =
+                lines.firstOrNull() ?: ""
 
-            val finalResult = AnalysisResult(
-                guideMessage = guideMessage,
-                fpsText = "FPS: %.1f".format(fps),
-                debugText = debugText,
-                faceDetected = faceDetected,
+            val debugText =
+                lines.drop(1).joinToString("\n")
 
-                landmarks = landmarks,
-                faceBox = faceBox,
+            val finalResultReady =
+                protocolManager.isInResultPhase()
 
-                leftEyePoints = leftEyePoints,
-                rightEyePoints = rightEyePoints,
-                leftIrisPoints = leftIrisPoints,
-                rightIrisPoints = rightIrisPoints,
+            val finalLabel =
+                protocolManager.getFinalLabel()
 
-                leftEyeRoiRect = leftEyeRoiRect,
-                rightEyeRoiRect = rightEyeRoiRect,
-                leftEyeRoiValid = leftEyeRoiValid,
-                rightEyeRoiValid = rightEyeRoiValid,
+            val finalScore =
+                protocolManager.getFinalScore()
 
-                leftEyeRoiScore = leftEyeRoiScore,
-                rightEyeRoiScore = rightEyeRoiScore,
-                bothEyeRoiValid = bothEyeRoiValid,
-                roiQualityReason = roiQualityReason,
+            val finalReason =
+                protocolManager.getFinalReason()
 
-                leftEyeCenter = leftEyeCenter,
-                rightEyeCenter = rightEyeCenter,
-                leftIrisCenter = leftIrisCenter,
-                rightIrisCenter = rightIrisCenter,
-                bothEyesReady = bothEyesReady,
+            val finalResult =
+                AnalysisResult(
+                    guideMessage = guideMessage,
+                    fpsText = "FPS: %.1f".format(fps),
+                    debugText = debugText,
 
-                leftIrisNormalizedX = leftIrisNormalizedX,
-                leftIrisNormalizedY = leftIrisNormalizedY,
-                rightIrisNormalizedX = rightIrisNormalizedX,
-                rightIrisNormalizedY = rightIrisNormalizedY,
-                irisHorizontalDiff = irisHorizontalDiff,
-                irisVerticalDiff = irisVerticalDiff,
-                alignmentScore = alignmentScore,
-                alignmentSuspected = alignmentSuspected,
-                alignmentReason = alignmentReason,
+                    faceDetected = faceDetected,
 
-                reflectionScore = reflectionScore,
-                reflectionSuspected = reflectionSuspected,
-                reflectionReason = reflectionReason,
+                    landmarks = landmarks,
+                    faceBox = faceBox,
 
-                rightCoverShift = rightCoverShift,
-                leftCoverShift = leftCoverShift,
-                coverScore = coverScore,
-                coverSuspected = coverSuspected,
-                coverReason = coverReason,
+                    leftEyePoints = leftEyePoints,
+                    rightEyePoints = rightEyePoints,
 
-                strabismusScore = strabismusScore,
-                strabismusSuspected = strabismusSuspected,
-                strabismusLabel = strabismusLabel,
-                strabismusReason = strabismusReason,
+                    leftIrisPoints = leftIrisPoints,
+                    rightIrisPoints = rightIrisPoints,
 
-                accumulatedScore = accumulatedScore,
-                accumulatedFrameCount = accumulatedFrameCount,
-                accumulatedSuspected = accumulatedSuspected,
-                accumulatedLabel = accumulatedLabel,
-                accumulatedReason = accumulatedReason,
+                    leftEyeRoiRect = leftEyeRoiRect,
+                    rightEyeRoiRect = rightEyeRoiRect,
 
-                isFinalResult = finalResultReady,
-                finalResultLabel = finalLabel,
-                finalResultScore = finalScore,
-                finalResultReason = finalReason,
+                    leftEyeRoiValid = leftEyeRoiValid,
+                    rightEyeRoiValid = rightEyeRoiValid,
 
-                imageWidth = rotatedBitmap.width,
-                imageHeight = rotatedBitmap.height,
+                    leftEyeRoiScore = leftEyeRoiScore,
+                    rightEyeRoiScore = rightEyeRoiScore,
 
-                requestedCameraMode = requestedCameraMode,
-                requestTorchOn = requestTorchOn
-            )
+                    bothEyeRoiValid = bothEyeRoiValid,
+                    roiQualityReason = roiQualityReason,
+
+                    leftEyeCenter = leftEyeCenter,
+                    rightEyeCenter = rightEyeCenter,
+
+                    leftIrisCenter = leftIrisCenter,
+                    rightIrisCenter = rightIrisCenter,
+
+                    bothEyesReady = bothEyesReady,
+
+                    leftIrisNormalizedX = leftIrisNormalizedX,
+                    leftIrisNormalizedY = leftIrisNormalizedY,
+
+                    rightIrisNormalizedX = rightIrisNormalizedX,
+                    rightIrisNormalizedY = rightIrisNormalizedY,
+
+                    irisHorizontalDiff = irisHorizontalDiff,
+                    irisVerticalDiff = irisVerticalDiff,
+
+                    alignmentScore = alignmentScore,
+                    alignmentSuspected = alignmentSuspected,
+                    alignmentReason = alignmentReason,
+
+                    reflectionScore = reflectionScore,
+                    reflectionSuspected = reflectionSuspected,
+                    reflectionReason = reflectionReason,
+
+                    rightCoverShift = rightCoverShift,
+                    leftCoverShift = leftCoverShift,
+
+                    coverScore = coverScore,
+                    coverSuspected = coverSuspected,
+                    coverReason = coverReason,
+
+                    strabismusScore = strabismusScore,
+                    strabismusSuspected = strabismusSuspected,
+                    strabismusLabel = strabismusLabel,
+                    strabismusReason = strabismusReason,
+
+                    accumulatedScore = accumulatedScore,
+                    accumulatedFrameCount = accumulatedFrameCount,
+                    accumulatedSuspected = accumulatedSuspected,
+                    accumulatedLabel = accumulatedLabel,
+                    accumulatedReason = accumulatedReason,
+
+                    isFinalResult = finalResultReady,
+                    finalResultLabel = finalLabel,
+                    finalResultScore = finalScore,
+                    finalResultReason = finalReason,
+
+                    imageWidth = rotatedBitmap.width,
+                    imageHeight = rotatedBitmap.height,
+
+                    requestedCameraMode = requestedCameraMode,
+                    requestTorchOn = requestTorchOn
+                )
 
             onResult(finalResult)
         } catch (e: Exception) {
@@ -420,23 +534,5 @@ class FrameAnalyzer(
         } finally {
             image.close()
         }
-    }
-
-    private fun isCoverTrigger(
-        irisVisible: Boolean,
-        eyeOpenRatio: Float,
-        eyeRoiValid: Boolean,
-        eyeRoiScore: Float,
-        otherEyeRoiScore: Float
-    ): Boolean {
-        var score = 0
-
-        if (!irisVisible) score += 2
-        if (eyeOpenRatio < 0.18f) score += 1
-        if (!eyeRoiValid) score += 1
-        if (eyeRoiScore < 0.45f) score += 1
-        if (otherEyeRoiScore - eyeRoiScore > 0.25f) score += 1
-
-        return score >= 2
     }
 }
