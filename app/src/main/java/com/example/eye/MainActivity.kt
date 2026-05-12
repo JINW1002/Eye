@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var previewView: PreviewView
     private lateinit var overlayView: FaceOverlayView
+
     private lateinit var guideText: TextView
     private lateinit var subtitleText: TextView
     private lateinit var fpsText: TextView
@@ -35,7 +36,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var resultReasonText: TextView
 
     private lateinit var cameraExecutor: ExecutorService
+
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
+    private lateinit var handLandmarkerHelper: HandLandmarkerHelper
     private lateinit var csvLogger: ScreeningCsvLogger
 
     private val protocolManager = ProtocolManager()
@@ -59,10 +62,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContentView(R.layout.activity_main)
+
+        protocolManager.reset()
 
         previewView = findViewById(R.id.previewView)
         overlayView = findViewById(R.id.overlayView)
+
         guideText = findViewById(R.id.guideText)
         subtitleText = findViewById(R.id.subtitleText)
         fpsText = findViewById(R.id.fpsText)
@@ -78,7 +85,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         faceLandmarkerHelper = FaceLandmarkerHelper(this)
         faceLandmarkerHelper.setup()
 
+        handLandmarkerHelper = HandLandmarkerHelper(this)
+        handLandmarkerHelper.setup()
+
         csvLogger = ScreeningCsvLogger(this)
+
         tts = TextToSpeech(this, this)
 
         if (allPermissionsGranted()) {
@@ -95,8 +106,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val result = tts?.setLanguage(Locale.KOREAN)
-            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                    result != TextToSpeech.LANG_NOT_SUPPORTED
+
+            ttsReady =
+                result != TextToSpeech.LANG_MISSING_DATA &&
+                        result != TextToSpeech.LANG_NOT_SUPPORTED
         }
     }
 
@@ -139,136 +152,93 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun bindUseCases(mode: CameraMode) {
         val provider = cameraProvider ?: return
 
-        turnOffTorchSafely()
+        val preview =
+            Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
 
-        val preview = Preview.Builder()
-            .build()
-            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+        val imageAnalyzer =
+            ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(
+                        cameraExecutor,
+                        FrameAnalyzer(
+                            faceLandmarkerHelper = faceLandmarkerHelper,
+                            protocolManager = protocolManager,
+                            sessionState = sessionState,
+                            handLandmarkerHelper = handLandmarkerHelper,
+                            cameraMode = mode
+                        ) { result ->
+                            runOnUiThread {
+                                guideText.text = result.guideMessage
+                                fpsText.text = result.fpsText
+                                subtitleText.text = buildSubtitle(result)
 
-        val imageAnalyzer = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .build()
-            .also { analysis ->
-                analysis.setAnalyzer(
-                    cameraExecutor,
-                    FrameAnalyzer(
-                        faceLandmarkerHelper = faceLandmarkerHelper,
-                        protocolManager = protocolManager,
-                        sessionState = sessionState,
-                        cameraMode = mode
-                    ) { result ->
-                        runOnUiThread {
-                            handleAnalysisResult(result)
+                                debugText.visibility = View.GONE
+                                debugText.text = result.debugText
+
+                                overlayView.setResults(
+                                    leftEyeRoiRect = result.leftEyeRoiRect,
+                                    rightEyeRoiRect = result.rightEyeRoiRect,
+                                    bothEyesReady = result.bothEyesReady,
+                                    imageWidth = result.imageWidth,
+                                    imageHeight = result.imageHeight
+                                )
+
+                                if (result.isFinalResult) {
+                                    resultCard.visibility = View.VISIBLE
+                                    resultValueText.text = result.finalResultLabel
+                                    resultReasonText.text = result.finalResultReason
+                                } else {
+                                    resultCard.visibility = View.GONE
+                                }
+
+                                speakGuideMessage(result.guideMessage)
+
+                                if (result.requestedCameraMode != currentCameraMode) {
+                                    currentCameraMode = result.requestedCameraMode
+                                    currentTorchOn = false
+                                    bindUseCases(currentCameraMode)
+                                    return@runOnUiThread
+                                }
+
+                                if (result.requestTorchOn != currentTorchOn) {
+                                    currentTorchOn = result.requestTorchOn
+
+                                    if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
+                                        boundCamera?.cameraControl?.enableTorch(currentTorchOn)
+                                    }
+                                }
+
+                                if (result.isFinalResult && !hasSavedFinalResult) {
+                                    csvLogger.append(result)
+                                    hasSavedFinalResult = true
+                                }
+                            }
                         }
-                    }
-                )
-            }
+                    )
+                }
 
         try {
             provider.unbindAll()
 
-            boundCamera = provider.bindToLifecycle(
-                this,
-                selectorFor(mode),
-                preview,
-                imageAnalyzer
-            )
+            boundCamera =
+                provider.bindToLifecycle(
+                    this,
+                    selectorFor(mode),
+                    preview,
+                    imageAnalyzer
+                )
 
-            applyTorch(currentTorchOn)
-
+            if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
+                boundCamera?.cameraControl?.enableTorch(currentTorchOn)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-    }
-
-    private fun handleAnalysisResult(result: AnalysisResult) {
-        guideText.text = result.guideMessage
-        fpsText.text = result.fpsText
-        subtitleText.text = buildSubtitle(result)
-
-        debugText.visibility = View.GONE
-
-        overlayView.setResults(
-            leftEyeRoiRect = result.leftEyeRoiRect,
-            rightEyeRoiRect = result.rightEyeRoiRect,
-            bothEyesReady = result.bothEyesReady,
-            imageWidth = result.imageWidth,
-            imageHeight = result.imageHeight
-        )
-
-        if (result.isFinalResult) {
-            resultCard.visibility = View.VISIBLE
-            resultTitleText.text = "검사 결과"
-            resultValueText.text = result.finalResultLabel
-            resultReasonText.text = result.finalResultReason
-        } else {
-            resultCard.visibility = View.GONE
-        }
-
-        speakGuideMessage(result.guideMessage)
-
-        if (result.requestedCameraMode != currentCameraMode) {
-            currentTorchOn = false
-            turnOffTorchSafely()
-
-            currentCameraMode = result.requestedCameraMode
-            bindUseCases(currentCameraMode)
-            return
-        }
-
-        if (result.requestTorchOn != currentTorchOn) {
-            currentTorchOn = result.requestTorchOn
-            applyTorch(currentTorchOn)
-        }
-
-        if (result.isFinalResult) {
-            currentTorchOn = false
-            turnOffTorchSafely()
-        }
-
-        if (result.isFinalResult && !hasSavedFinalResult) {
-            csvLogger.append(result)
-            hasSavedFinalResult = true
-        }
-    }
-
-    private fun applyTorch(enabled: Boolean) {
-        val camera = boundCamera ?: return
-
-        if (currentCameraMode != CameraMode.BACK) {
-            camera.cameraControl.enableTorch(false)
-            return
-        }
-
-        if (camera.cameraInfo.hasFlashUnit()) {
-            camera.cameraControl.enableTorch(enabled)
-        }
-    }
-
-    private fun turnOffTorchSafely() {
-        boundCamera?.let { camera ->
-            if (camera.cameraInfo.hasFlashUnit()) {
-                camera.cameraControl.enableTorch(false)
-            }
-        }
-    }
-
-    private fun resetScreening() {
-        protocolManager.reset()
-        sessionState.reset()
-
-        hasSavedFinalResult = false
-        lastSpokenGuide = ""
-        lastSpeakTime = 0L
-
-        resultCard.visibility = View.GONE
-
-        currentTorchOn = false
-        turnOffTorchSafely()
-
-        if (currentCameraMode != CameraMode.FRONT) {
-            currentCameraMode = CameraMode.FRONT
-            bindUseCases(currentCameraMode)
         }
     }
 
@@ -296,7 +266,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         permissions: Array<String>,
         grantResults: IntArray
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
 
         if (requestCode == requestCodeCamera) {
             if (allPermissionsGranted()) {
@@ -310,10 +284,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         super.onDestroy()
 
-        currentTorchOn = false
-        turnOffTorchSafely()
-
         faceLandmarkerHelper.clear()
+        handLandmarkerHelper.clear()
+
         cameraExecutor.shutdown()
 
         tts?.stop()
