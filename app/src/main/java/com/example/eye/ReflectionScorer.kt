@@ -4,7 +4,8 @@ object ReflectionScorer {
 
     fun score(
         bothEyesReady: Boolean,
-        hirschbergResult: HirschbergResult
+        irisHorizontalDiff: Float,
+        irisVerticalDiff: Float
     ): ReflectionScoreResult {
         if (!bothEyesReady) {
             return ReflectionScoreResult(
@@ -14,18 +15,26 @@ object ReflectionScorer {
             )
         }
 
-        if (!hirschbergResult.valid) {
-            return ReflectionScoreResult(
-                score = 0f,
-                suspected = false,
-                reason = hirschbergResult.reason
-            )
+        val horizontal = (irisHorizontalDiff / 0.20f).coerceIn(0f, 1f)
+        val vertical = (irisVerticalDiff / 0.16f).coerceIn(0f, 1f)
+
+        val finalScore = (
+                horizontal * 0.70f +
+                        vertical * 0.30f
+                ).coerceIn(0f, 1f)
+
+        val suspected = finalScore >= 0.45f
+
+        val reason = when {
+            !suspected -> "반사광 기준 좌우 시선 차이가 크지 않습니다."
+            irisHorizontalDiff >= irisVerticalDiff -> "반사광 기준 수평 시선 차이가 커 보입니다."
+            else -> "반사광 기준 수직 시선 차이가 커 보입니다."
         }
 
         return ReflectionScoreResult(
-            score = hirschbergResult.score,
-            suspected = hirschbergResult.suspected,
-            reason = hirschbergResult.reason
+            score = finalScore,
+            suspected = suspected,
+            reason = reason
         )
     }
 }
