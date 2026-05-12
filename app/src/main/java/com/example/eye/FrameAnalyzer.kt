@@ -83,6 +83,11 @@ class FrameAnalyzer(
             var alignmentSuspected = false
             var alignmentReason = "정렬 계산 전"
 
+            var leftGazeX = 0f
+            var leftGazeY = 0f
+            var rightGazeX = 0f
+            var rightGazeY = 0f
+
             var reflectionScore = 0f
             var reflectionSuspected = false
             var reflectionReason = "반사광 계산 전"
@@ -192,6 +197,12 @@ class FrameAnalyzer(
                 leftIrisNormalizedY = alignmentResult.left.normalizedY
                 rightIrisNormalizedX = alignmentResult.right.normalizedX
                 rightIrisNormalizedY = alignmentResult.right.normalizedY
+
+                leftGazeX = alignmentResult.left.gazeX
+                leftGazeY = alignmentResult.left.gazeY
+                rightGazeX = alignmentResult.right.gazeX
+                rightGazeY = alignmentResult.right.gazeY
+
                 irisHorizontalDiff = alignmentResult.horizontalDiff
                 irisVerticalDiff = alignmentResult.verticalDiff
                 alignmentScore = alignmentResult.alignmentScore
@@ -199,14 +210,10 @@ class FrameAnalyzer(
                 alignmentReason = alignmentResult.reason
 
                 if (cameraMode == CameraMode.BACK) {
-                    val hirschbergResult = HirschbergAnalyzer.analyze(
-                        leftBitmap = eyeRoiResult.leftEyeBitmap,
-                        rightBitmap = eyeRoiResult.rightEyeBitmap
-                    )
-
                     val reflectionResult = ReflectionScorer.score(
                         bothEyesReady = bothEyesReady,
-                        hirschbergResult = hirschbergResult
+                        irisHorizontalDiff = irisHorizontalDiff,
+                        irisVerticalDiff = irisVerticalDiff
                     )
 
                     sessionState.updateReflection(reflectionResult)
@@ -220,28 +227,46 @@ class FrameAnalyzer(
                     reflectionReason = sessionState.savedReflectionReason
                 }
 
-                coverTestTracker.updateBaseline(
-                    bothEyesReady = bothEyesReady,
-                    irisHorizontalDiff = irisHorizontalDiff,
-                    irisVerticalDiff = irisVerticalDiff
+                val rightCoverTrigger = isCoverTrigger(
+                    irisVisible = rightIrisVisible,
+                    eyeOpenRatio = rightEyeOpenRatio,
+                    eyeRoiValid = rightEyeRoiValid,
+                    eyeRoiScore = rightEyeRoiScore,
+                    otherEyeRoiScore = leftEyeRoiScore
                 )
 
-                val rightCovered = (!rightIrisVisible) || (rightEyeOpenRatio < 0.10f)
-                val leftCovered = (!leftIrisVisible) || (leftEyeOpenRatio < 0.10f)
+                val leftCoverTrigger = isCoverTrigger(
+                    irisVisible = leftIrisVisible,
+                    eyeOpenRatio = leftEyeOpenRatio,
+                    eyeRoiValid = leftEyeRoiValid,
+                    eyeRoiScore = leftEyeRoiScore,
+                    otherEyeRoiScore = rightEyeRoiScore
+                )
 
-                if (rightCovered && !leftCovered) {
-                    coverTestTracker.recordRightCover(
-                        bothEyesReady = bothEyesReady,
-                        currentHorizontalDiff = irisHorizontalDiff,
-                        currentVerticalDiff = irisVerticalDiff
+                val noEyeCovered = !rightCoverTrigger && !leftCoverTrigger
+
+                coverTestTracker.updateBaseline(
+                    bothEyesReady = bothEyesReady,
+                    noEyeCovered = noEyeCovered,
+                    leftGazeX = leftGazeX,
+                    leftGazeY = leftGazeY,
+                    rightGazeX = rightGazeX,
+                    rightGazeY = rightGazeY
+                )
+
+                if (rightCoverTrigger && !leftCoverTrigger) {
+                    coverTestTracker.recordRightCoverMovement(
+                        leftEyeReady = leftIrisVisible && leftEyeRoiValid,
+                        currentLeftGazeX = leftGazeX,
+                        currentLeftGazeY = leftGazeY
                     )
                 }
 
-                if (leftCovered && !rightCovered) {
-                    coverTestTracker.recordLeftCover(
-                        bothEyesReady = bothEyesReady,
-                        currentHorizontalDiff = irisHorizontalDiff,
-                        currentVerticalDiff = irisVerticalDiff
+                if (leftCoverTrigger && !rightCoverTrigger) {
+                    coverTestTracker.recordLeftCoverMovement(
+                        rightEyeReady = rightIrisVisible && rightEyeRoiValid,
+                        currentRightGazeX = rightGazeX,
+                        currentRightGazeY = rightGazeY
                     )
                 }
 
@@ -303,54 +328,17 @@ class FrameAnalyzer(
 
             val lines = fullText.split("\n")
             val guideMessage = lines.firstOrNull() ?: ""
-            val originalDebugText = lines.drop(1).joinToString("\n")
+            val debugText = lines.drop(1).joinToString("\n")
 
             val finalResultReady = protocolManager.isInResultPhase()
             val finalLabel = protocolManager.getFinalLabel()
             val finalScore = protocolManager.getFinalScore()
             val finalReason = protocolManager.getFinalReason()
 
-            val roiDebug = buildString {
-                append(originalDebugText)
-                if (originalDebugText.isNotBlank()) append("\n")
-
-                append("leftEyeRoiScore: %.2f\n".format(leftEyeRoiScore))
-                append("rightEyeRoiScore: %.2f\n".format(rightEyeRoiScore))
-                append("bothEyeRoiValid: $bothEyeRoiValid\n")
-                append("bothEyesReady: $bothEyesReady\n")
-
-                append("alignmentScore: %.2f\n".format(alignmentScore))
-                append("reflectionScore: %.2f\n".format(reflectionScore))
-                append("reflectionSuspected: $reflectionSuspected\n")
-                append("coverScore: %.2f\n".format(coverScore))
-                append("rightCoverShift: %.3f\n".format(rightCoverShift))
-                append("leftCoverShift: %.3f\n".format(leftCoverShift))
-
-                append("strabismusScore: %.3f\n".format(strabismusScore))
-                append("strabismusSuspected: $strabismusSuspected\n")
-                append("strabismusLabel: $strabismusLabel\n")
-
-                append("accumulatedScore: %.3f\n".format(accumulatedScore))
-                append("accumulatedFrameCount: $accumulatedFrameCount\n")
-                append("accumulatedSuspected: $accumulatedSuspected\n")
-                append("accumulatedLabel: $accumulatedLabel\n")
-
-                append("finalResultReady: $finalResultReady\n")
-                append("finalResultLabel: $finalLabel\n")
-                append("finalResultScore: %.3f\n".format(finalScore))
-
-                append("alignmentReason: $alignmentReason\n")
-                append("reflectionReason: $reflectionReason\n")
-                append("coverReason: $coverReason\n")
-                append("strabismusReason: $strabismusReason\n")
-                append("accumulatedReason: $accumulatedReason\n")
-                append("finalReason: $finalReason")
-            }
-
             val finalResult = AnalysisResult(
                 guideMessage = guideMessage,
                 fpsText = "FPS: %.1f".format(fps),
-                debugText = roiDebug,
+                debugText = debugText,
                 faceDetected = faceDetected,
 
                 landmarks = landmarks,
@@ -432,5 +420,23 @@ class FrameAnalyzer(
         } finally {
             image.close()
         }
+    }
+
+    private fun isCoverTrigger(
+        irisVisible: Boolean,
+        eyeOpenRatio: Float,
+        eyeRoiValid: Boolean,
+        eyeRoiScore: Float,
+        otherEyeRoiScore: Float
+    ): Boolean {
+        var score = 0
+
+        if (!irisVisible) score += 2
+        if (eyeOpenRatio < 0.18f) score += 1
+        if (!eyeRoiValid) score += 1
+        if (eyeRoiScore < 0.45f) score += 1
+        if (otherEyeRoiScore - eyeRoiScore > 0.25f) score += 1
+
+        return score >= 2
     }
 }
