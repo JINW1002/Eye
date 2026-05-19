@@ -11,6 +11,7 @@ class FrameAnalyzer(
     private val protocolManager: ProtocolManager,
     private val sessionState: ScreeningSessionState,
     private val handLandmarkerHelper: HandLandmarkerHelper,
+    private val ellSegHelper: EllSegHelper,
     private val cameraMode: CameraMode,
     private val onResult: (AnalysisResult) -> Unit
 ) : ImageAnalysis.Analyzer {
@@ -46,13 +47,15 @@ class FrameAnalyzer(
             val faceResult: FaceLandmarkerResult? =
                 faceLandmarkerHelper.detect(rotatedBitmap)
 
-            val handResult = handLandmarkerHelper.detect(rotatedBitmap)
+            val handResult =
+                handLandmarkerHelper.detect(rotatedBitmap)
 
-            val handPoints = HandLandmarkerHelper.handPointsToPixel(
-                result = handResult,
-                imageWidth = rotatedBitmap.width,
-                imageHeight = rotatedBitmap.height
-            )
+            val handPoints =
+                HandLandmarkerHelper.handPointsToPixel(
+                    result = handResult,
+                    imageWidth = rotatedBitmap.width,
+                    imageHeight = rotatedBitmap.height
+                )
 
             val faceDetected =
                 faceResult != null &&
@@ -63,6 +66,7 @@ class FrameAnalyzer(
 
             var leftEyePoints: List<PointF> = emptyList()
             var rightEyePoints: List<PointF> = emptyList()
+
             var leftIrisPoints: List<PointF> = emptyList()
             var rightIrisPoints: List<PointF> = emptyList()
 
@@ -75,6 +79,7 @@ class FrameAnalyzer(
 
             var leftEyeRoiScore = 0f
             var rightEyeRoiScore = 0f
+
             var roiQualityReason = "ROI 없음"
 
             var faceCentered = false
@@ -95,6 +100,7 @@ class FrameAnalyzer(
 
             var leftIrisNormalizedX = 0f
             var leftIrisNormalizedY = 0f
+
             var rightIrisNormalizedX = 0f
             var rightIrisNormalizedY = 0f
 
@@ -132,26 +138,31 @@ class FrameAnalyzer(
             var accumulatedLabel = "판정불가"
             var accumulatedReason = "누적 전"
 
+            var leftEllSegResult = EllSegVisibilityResult()
+            var rightEllSegResult = EllSegVisibilityResult()
+
             if (faceDetected) {
                 val faceLandmarks = faceResult!!.faceLandmarks()[0]
 
-                landmarks = faceLandmarks.map {
-                    FaceLandmarkerHelper.normalizedToPixelPoint(
-                        it.x(),
-                        it.y(),
-                        rotatedBitmap.width,
-                        rotatedBitmap.height
-                    )
-                }
+                landmarks =
+                    faceLandmarks.map {
+                        FaceLandmarkerHelper.normalizedToPixelPoint(
+                            it.x(),
+                            it.y(),
+                            rotatedBitmap.width,
+                            rotatedBitmap.height
+                        )
+                    }
 
                 faceBox = FaceMathUtils.boundingBox(landmarks)
 
                 if (faceBox != null) {
-                    faceCentered = FaceMathUtils.isFaceCentered(
-                        faceBox,
-                        rotatedBitmap.width,
-                        rotatedBitmap.height
-                    )
+                    faceCentered =
+                        FaceMathUtils.isFaceCentered(
+                            faceBox,
+                            rotatedBitmap.width,
+                            rotatedBitmap.height
+                        )
                 }
 
                 leftEyePoints =
@@ -204,9 +215,11 @@ class FrameAnalyzer(
 
                 leftEyeRoiScore = qualityResult.leftScore
                 rightEyeRoiScore = qualityResult.rightScore
+
                 leftEyeRoiValid = qualityResult.leftValid
                 rightEyeRoiValid = qualityResult.rightValid
                 bothEyeRoiValid = qualityResult.bothValid
+
                 roiQualityReason = qualityResult.reason
 
                 val eyeFeatureResult =
@@ -233,6 +246,35 @@ class FrameAnalyzer(
                 leftIrisVisible = eyeFeatureResult.left.irisVisible
                 rightIrisVisible = eyeFeatureResult.right.irisVisible
 
+                val useEllSegForCover =
+                    protocolManager.isCoverPhase()
+
+                if (useEllSegForCover) {
+                    leftEllSegResult =
+                        ellSegHelper.analyzeEye(
+                            eyeRoiResult.leftEyeBitmap
+                        )
+
+                    rightEllSegResult =
+                        ellSegHelper.analyzeEye(
+                            eyeRoiResult.rightEyeBitmap
+                        )
+
+                    if (leftEllSegResult.available) {
+                        leftIrisVisible = leftEllSegResult.irisVisible
+                    }
+
+                    if (rightEllSegResult.available) {
+                        rightIrisVisible = rightEllSegResult.irisVisible
+                    }
+
+                    bothEyesReady =
+                        leftIrisVisible &&
+                                rightIrisVisible &&
+                                leftEyeRoiValid &&
+                                rightEyeRoiValid
+                }
+
                 val alignmentResult =
                     EyeAlignmentAnalyzer.analyze(
                         leftEyePoints = leftEyePoints,
@@ -243,6 +285,7 @@ class FrameAnalyzer(
 
                 leftIrisNormalizedX = alignmentResult.left.normalizedX
                 leftIrisNormalizedY = alignmentResult.left.normalizedY
+
                 rightIrisNormalizedX = alignmentResult.right.normalizedX
                 rightIrisNormalizedY = alignmentResult.right.normalizedY
 
@@ -277,14 +320,32 @@ class FrameAnalyzer(
                     reflectionReason = sessionState.savedReflectionReason
                 }
 
-                val handCoverResult = HandEyeCoverDetector.detect(
-                    handPoints = handPoints,
-                    leftEyeRect = leftEyeRoiRect,
-                    rightEyeRect = rightEyeRoiRect
-                )
+                val handCoverResult =
+                    HandEyeCoverDetector.detect(
+                        handPoints = handPoints,
+                        leftEyeRect = leftEyeRoiRect,
+                        rightEyeRect = rightEyeRoiRect
+                    )
 
-                val rightCoverTrigger = handCoverResult.rightEyeCovered
-                val leftCoverTrigger = handCoverResult.leftEyeCovered
+                val rightCoverTrigger =
+                    if (
+                        useEllSegForCover &&
+                        rightEllSegResult.available
+                    ) {
+                        !rightEllSegResult.irisVisible
+                    } else {
+                        handCoverResult.rightEyeCovered
+                    }
+
+                val leftCoverTrigger =
+                    if (
+                        useEllSegForCover &&
+                        leftEllSegResult.available
+                    ) {
+                        !leftEllSegResult.irisVisible
+                    } else {
+                        handCoverResult.leftEyeCovered
+                    }
 
                 val noEyeCovered =
                     !rightCoverTrigger &&
@@ -330,6 +391,7 @@ class FrameAnalyzer(
 
                 rightCoverShift = coverState.rightCoverShift
                 leftCoverShift = coverState.leftCoverShift
+
                 coverScore = coverState.coverScore
                 coverSuspected = coverState.suspected
                 coverReason = coverState.reason
@@ -349,7 +411,9 @@ class FrameAnalyzer(
 
                 val accumulatedResult =
                     scoreAccumulator.addScore(
-                        validFrame = bothEyesReady && bothEyeRoiValid,
+                        validFrame =
+                        bothEyesReady &&
+                                bothEyeRoiValid,
                         score = strabismusScore
                     )
 
@@ -369,7 +433,11 @@ class FrameAnalyzer(
                 accumulatedReason = accumulatedResult.reason
             }
 
-            val (fullText, requestedCameraMode, requestTorchOn) =
+            val (
+                fullText,
+                requestedCameraMode,
+                requestTorchOn
+            ) =
                 protocolManager.update(
                     activeCameraMode = cameraMode,
                     faceDetected = faceDetected,
@@ -389,19 +457,71 @@ class FrameAnalyzer(
                 )
 
             val lines = fullText.split("\n")
-            val guideMessage = lines.firstOrNull() ?: ""
-            val debugText = lines.drop(1).joinToString("\n")
 
-            val finalResultReady = protocolManager.isInResultPhase()
-            val finalLabel = protocolManager.getFinalLabel()
-            val finalScore = protocolManager.getFinalScore()
-            val finalReason = protocolManager.getFinalReason()
+            val guideMessage =
+                lines.firstOrNull() ?: ""
+
+            val protocolDebugText =
+                lines.drop(1).joinToString("\n")
+
+            val finalResultReady =
+                protocolManager.isInResultPhase()
+
+            val finalLabel =
+                protocolManager.getFinalLabel()
+
+            val finalScore =
+                protocolManager.getFinalScore()
+
+            val finalReason =
+                protocolManager.getFinalReason()
+
+            val debugText =
+                buildString {
+                    append(protocolDebugText)
+                    if (protocolDebugText.isNotBlank()) append("\n")
+
+                    append("leftEyeRoiScore: %.2f\n".format(leftEyeRoiScore))
+                    append("rightEyeRoiScore: %.2f\n".format(rightEyeRoiScore))
+                    append("bothEyeRoiValid: $bothEyeRoiValid\n")
+                    append("bothEyesReady: $bothEyesReady\n")
+
+                    append("leftIrisVisible: $leftIrisVisible\n")
+                    append("rightIrisVisible: $rightIrisVisible\n")
+
+                    append("leftEllSegAvailable: ${leftEllSegResult.available}\n")
+                    append("rightEllSegAvailable: ${rightEllSegResult.available}\n")
+                    append("leftEllSegVisible: ${leftEllSegResult.irisVisible}\n")
+                    append("rightEllSegVisible: ${rightEllSegResult.irisVisible}\n")
+                    append("leftEllSegArea: %.4f\n".format(leftEllSegResult.irisAreaRatio))
+                    append("rightEllSegArea: %.4f\n".format(rightEllSegResult.irisAreaRatio))
+                    append("leftEllSegConfidence: %.4f\n".format(leftEllSegResult.confidence))
+                    append("rightEllSegConfidence: %.4f\n".format(rightEllSegResult.confidence))
+
+                    append("alignmentScore: %.2f\n".format(alignmentScore))
+                    append("reflectionScore: %.2f\n".format(reflectionScore))
+                    append("coverScore: %.2f\n".format(coverScore))
+                    append("rightCoverShift: %.3f\n".format(rightCoverShift))
+                    append("leftCoverShift: %.3f\n".format(leftCoverShift))
+
+                    append("strabismusScore: %.3f\n".format(strabismusScore))
+                    append("accumulatedScore: %.3f\n".format(accumulatedScore))
+                    append("accumulatedFrameCount: $accumulatedFrameCount\n")
+
+                    append("alignmentReason: $alignmentReason\n")
+                    append("reflectionReason: $reflectionReason\n")
+                    append("coverReason: $coverReason\n")
+                    append("strabismusReason: $strabismusReason\n")
+                    append("accumulatedReason: $accumulatedReason\n")
+                    append("finalReason: $finalReason")
+                }
 
             val finalResult =
                 AnalysisResult(
                     guideMessage = guideMessage,
                     fpsText = "FPS: %.1f".format(fps),
                     debugText = debugText,
+
                     faceDetected = faceDetected,
 
                     landmarks = landmarks,

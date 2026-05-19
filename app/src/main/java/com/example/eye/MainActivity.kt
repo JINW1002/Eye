@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
     private lateinit var handLandmarkerHelper: HandLandmarkerHelper
+    private lateinit var ellSegHelper: EllSegHelper
     private lateinit var csvLogger: ScreeningCsvLogger
 
     private val protocolManager = ProtocolManager()
@@ -62,7 +63,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContentView(R.layout.activity_main)
 
         protocolManager.reset()
@@ -88,6 +88,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         handLandmarkerHelper = HandLandmarkerHelper(this)
         handLandmarkerHelper.setup()
 
+        ellSegHelper = EllSegHelper(this)
+        ellSegHelper.setup()
+
         csvLogger = ScreeningCsvLogger(this)
 
         tts = TextToSpeech(this, this)
@@ -106,7 +109,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val result = tts?.setLanguage(Locale.KOREAN)
-
             ttsReady =
                 result != TextToSpeech.LANG_MISSING_DATA &&
                         result != TextToSpeech.LANG_NOT_SUPPORTED
@@ -171,6 +173,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             protocolManager = protocolManager,
                             sessionState = sessionState,
                             handLandmarkerHelper = handLandmarkerHelper,
+                            ellSegHelper = ellSegHelper,
                             cameraMode = mode
                         ) { result ->
                             runOnUiThread {
@@ -286,6 +289,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         faceLandmarkerHelper.clear()
         handLandmarkerHelper.clear()
+        ellSegHelper.clear()
 
         cameraExecutor.shutdown()
 

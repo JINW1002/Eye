@@ -21,6 +21,25 @@ class ProtocolManager {
         finalScore = 0f
         finalReason = "검사 전"
     }
+    fun isCoverPhase(): Boolean {
+
+        return when (phase) {
+
+            ScreeningPhase.COVER_RIGHT_PREPARE,
+            ScreeningPhase.COVER_RIGHT_COVER_1,
+            ScreeningPhase.COVER_RIGHT_UNCOVER_1,
+            ScreeningPhase.COVER_RIGHT_COVER_2,
+            ScreeningPhase.COVER_RIGHT_UNCOVER_2,
+
+            ScreeningPhase.COVER_LEFT_PREPARE,
+            ScreeningPhase.COVER_LEFT_COVER_1,
+            ScreeningPhase.COVER_LEFT_UNCOVER_1,
+            ScreeningPhase.COVER_LEFT_COVER_2,
+            ScreeningPhase.COVER_LEFT_UNCOVER_2 -> true
+
+            else -> false
+        }
+    }
 
     fun isInResultPhase(): Boolean = phase == ScreeningPhase.RESULT
     fun getFinalLabel(): String = finalLabel
