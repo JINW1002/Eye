@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
     private lateinit var handLandmarkerHelper: HandLandmarkerHelper
-    private lateinit var ellSegHelper: EllSegHelper
+    private lateinit var irisSegmentationHelper: IrisSegmentationHelper
     private lateinit var csvLogger: ScreeningCsvLogger
 
     private val protocolManager = ProtocolManager()
@@ -88,8 +88,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         handLandmarkerHelper = HandLandmarkerHelper(this)
         handLandmarkerHelper.setup()
 
-        ellSegHelper = EllSegHelper(this)
-        ellSegHelper.setup()
+        irisSegmentationHelper = IrisSegmentationHelper(this)
 
         csvLogger = ScreeningCsvLogger(this)
 
@@ -173,7 +172,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             protocolManager = protocolManager,
                             sessionState = sessionState,
                             handLandmarkerHelper = handLandmarkerHelper,
-                            ellSegHelper = ellSegHelper,
+                            irisSegmentationHelper = irisSegmentationHelper,
                             cameraMode = mode
                         ) { result ->
                             runOnUiThread {
@@ -269,11 +268,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         permissions: Array<String>,
         grantResults: IntArray
     ) {
-        super.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
         if (requestCode == requestCodeCamera) {
             if (allPermissionsGranted()) {
@@ -289,7 +284,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         faceLandmarkerHelper.clear()
         handLandmarkerHelper.clear()
-        ellSegHelper.clear()
+        irisSegmentationHelper.close()
 
         cameraExecutor.shutdown()
 

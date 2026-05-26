@@ -11,7 +11,7 @@ class FrameAnalyzer(
     private val protocolManager: ProtocolManager,
     private val sessionState: ScreeningSessionState,
     private val handLandmarkerHelper: HandLandmarkerHelper,
-    private val ellSegHelper: EllSegHelper,
+    private val irisSegmentationHelper: IrisSegmentationHelper,
     private val cameraMode: CameraMode,
     private val onResult: (AnalysisResult) -> Unit
 ) : ImageAnalysis.Analyzer {
@@ -138,8 +138,8 @@ class FrameAnalyzer(
             var accumulatedLabel = "판정불가"
             var accumulatedReason = "누적 전"
 
-            var leftEllSegResult = EllSegVisibilityResult()
-            var rightEllSegResult = EllSegVisibilityResult()
+            var leftIrisSegResult = IrisVisibilityResult()
+            var rightIrisSegResult = IrisVisibilityResult()
 
             if (faceDetected) {
                 val faceLandmarks = faceResult!!.faceLandmarks()[0]
@@ -246,33 +246,27 @@ class FrameAnalyzer(
                 leftIrisVisible = eyeFeatureResult.left.irisVisible
                 rightIrisVisible = eyeFeatureResult.right.irisVisible
 
-                val useEllSegForCover =
+                val useIrisSegmentationForCover =
                     protocolManager.isCoverPhase()
 
-                if (useEllSegForCover) {
-                    leftEllSegResult =
-                        ellSegHelper.analyzeEye(
+                if (useIrisSegmentationForCover) {
+                    leftIrisSegResult =
+                        irisSegmentationHelper.analyzeEye(
                             eyeRoiResult.leftEyeBitmap
                         )
 
-                    rightEllSegResult =
-                        ellSegHelper.analyzeEye(
+                    rightIrisSegResult =
+                        irisSegmentationHelper.analyzeEye(
                             eyeRoiResult.rightEyeBitmap
                         )
 
-                    if (leftEllSegResult.available) {
-                        leftIrisVisible = leftEllSegResult.irisVisible
+                    if (leftIrisSegResult.available) {
+                        leftIrisVisible = leftIrisSegResult.irisVisible
                     }
 
-                    if (rightEllSegResult.available) {
-                        rightIrisVisible = rightEllSegResult.irisVisible
+                    if (rightIrisSegResult.available) {
+                        rightIrisVisible = rightIrisSegResult.irisVisible
                     }
-
-                    bothEyesReady =
-                        leftIrisVisible &&
-                                rightIrisVisible &&
-                                leftEyeRoiValid &&
-                                rightEyeRoiValid
                 }
 
                 val alignmentResult =
@@ -329,20 +323,20 @@ class FrameAnalyzer(
 
                 val rightCoverTrigger =
                     if (
-                        useEllSegForCover &&
-                        rightEllSegResult.available
+                        useIrisSegmentationForCover &&
+                        rightIrisSegResult.available
                     ) {
-                        !rightEllSegResult.irisVisible
+                        !rightIrisSegResult.irisVisible
                     } else {
                         handCoverResult.rightEyeCovered
                     }
 
                 val leftCoverTrigger =
                     if (
-                        useEllSegForCover &&
-                        leftEllSegResult.available
+                        useIrisSegmentationForCover &&
+                        leftIrisSegResult.available
                     ) {
-                        !leftEllSegResult.irisVisible
+                        !leftIrisSegResult.irisVisible
                     } else {
                         handCoverResult.leftEyeCovered
                     }
@@ -489,14 +483,14 @@ class FrameAnalyzer(
                     append("leftIrisVisible: $leftIrisVisible\n")
                     append("rightIrisVisible: $rightIrisVisible\n")
 
-                    append("leftEllSegAvailable: ${leftEllSegResult.available}\n")
-                    append("rightEllSegAvailable: ${rightEllSegResult.available}\n")
-                    append("leftEllSegVisible: ${leftEllSegResult.irisVisible}\n")
-                    append("rightEllSegVisible: ${rightEllSegResult.irisVisible}\n")
-                    append("leftEllSegArea: %.4f\n".format(leftEllSegResult.irisAreaRatio))
-                    append("rightEllSegArea: %.4f\n".format(rightEllSegResult.irisAreaRatio))
-                    append("leftEllSegConfidence: %.4f\n".format(leftEllSegResult.confidence))
-                    append("rightEllSegConfidence: %.4f\n".format(rightEllSegResult.confidence))
+                    append("leftIrisSegAvailable: ${leftIrisSegResult.available}\n")
+                    append("rightIrisSegAvailable: ${rightIrisSegResult.available}\n")
+                    append("leftIrisSegVisible: ${leftIrisSegResult.irisVisible}\n")
+                    append("rightIrisSegVisible: ${rightIrisSegResult.irisVisible}\n")
+                    append("leftIrisArea: %.4f\n".format(leftIrisSegResult.irisAreaRatio))
+                    append("rightIrisArea: %.4f\n".format(rightIrisSegResult.irisAreaRatio))
+                    append("leftPupilArea: %.4f\n".format(leftIrisSegResult.pupilAreaRatio))
+                    append("rightPupilArea: %.4f\n".format(rightIrisSegResult.pupilAreaRatio))
 
                     append("alignmentScore: %.2f\n".format(alignmentScore))
                     append("reflectionScore: %.2f\n".format(reflectionScore))
@@ -513,7 +507,9 @@ class FrameAnalyzer(
                     append("coverReason: $coverReason\n")
                     append("strabismusReason: $strabismusReason\n")
                     append("accumulatedReason: $accumulatedReason\n")
-                    append("finalReason: $finalReason")
+                    append("finalReason: $finalReason\n")
+                    append("leftIrisSegReason: ${leftIrisSegResult.reason}\n")
+                    append("rightIrisSegReason: ${rightIrisSegResult.reason}")
                 }
 
             val finalResult =
