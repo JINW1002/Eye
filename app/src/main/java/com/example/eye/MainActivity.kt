@@ -1,295 +1,69 @@
 package com.example.eye
 
-import android.Manifest
-import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.view.View
-import android.widget.LinearLayout
+import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import java.util.Locale
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+class MainActivity : AppCompatActivity() {
 
-    private lateinit var previewView: PreviewView
-    private lateinit var overlayView: FaceOverlayView
+    private lateinit var analyzer: FrameAnalyzer
 
     private lateinit var guideText: TextView
-    private lateinit var subtitleText: TextView
-    private lateinit var fpsText: TextView
     private lateinit var debugText: TextView
-
-    private lateinit var resultCard: LinearLayout
-    private lateinit var resultTitleText: TextView
-    private lateinit var resultValueText: TextView
-    private lateinit var resultReasonText: TextView
-
-    private lateinit var cameraExecutor: ExecutorService
-
-    private lateinit var faceLandmarkerHelper: FaceLandmarkerHelper
-    private lateinit var handLandmarkerHelper: HandLandmarkerHelper
-    private lateinit var irisSegmentationHelper: IrisSegmentationHelper
-    private lateinit var csvLogger: ScreeningCsvLogger
-
-    private val protocolManager = ProtocolManager()
-    private val sessionState = ScreeningSessionState()
-
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var lastSpokenGuide = ""
-    private var lastSpeakTime = 0L
-    private val speakInterval = 3000L
-
-    private val requestCodeCamera = 100
-
-    private var currentCameraMode = CameraMode.FRONT
-    private var currentTorchOn = false
-
-    private var boundCamera: Camera? = null
-    private var cameraProvider: ProcessCameraProvider? = null
-
-    private var hasSavedFinalResult = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        protocolManager.reset()
-
-        previewView = findViewById(R.id.previewView)
-        overlayView = findViewById(R.id.overlayView)
+        analyzer = FrameAnalyzer(this)
 
         guideText = findViewById(R.id.guideText)
-        subtitleText = findViewById(R.id.subtitleText)
-        fpsText = findViewById(R.id.fpsText)
         debugText = findViewById(R.id.debugText)
 
-        resultCard = findViewById(R.id.resultCard)
-        resultTitleText = findViewById(R.id.resultTitleText)
-        resultValueText = findViewById(R.id.resultValueText)
-        resultReasonText = findViewById(R.id.resultReasonText)
+        // 🔥 버튼 연결
+        val btnVisible = findViewById<Button>(R.id.btnVisible)
+        val btnCovered = findViewById<Button>(R.id.btnCovered)
+        val btnClosed = findViewById<Button>(R.id.btnClosed)
+        val btnBad = findViewById<Button>(R.id.btnBad)
 
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        btnVisible.setOnClickListener {
+            analyzer.currentLabel = "visible_eye"
+        }
 
-        faceLandmarkerHelper = FaceLandmarkerHelper(this)
-        faceLandmarkerHelper.setup()
+        btnCovered.setOnClickListener {
+            analyzer.currentLabel = "covered_eye"
+        }
 
-        handLandmarkerHelper = HandLandmarkerHelper(this)
-        handLandmarkerHelper.setup()
+        btnClosed.setOnClickListener {
+            analyzer.currentLabel = "closed_eye"
+        }
 
-        irisSegmentationHelper = IrisSegmentationHelper(this)
-
-        csvLogger = ScreeningCsvLogger(this)
-
-        tts = TextToSpeech(this, this)
-
-        if (allPermissionsGranted()) {
-            startCamera(currentCameraMode)
-        } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                requestCodeCamera
-            )
+        btnBad.setOnClickListener {
+            analyzer.currentLabel = "bad_roi"
         }
     }
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.KOREAN)
-            ttsReady =
-                result != TextToSpeech.LANG_MISSING_DATA &&
-                        result != TextToSpeech.LANG_NOT_SUPPORTED
-        }
-    }
-
-    private fun speakGuideMessage(message: String) {
-        if (!ttsReady) return
-        if (message.isBlank()) return
-
-        val now = System.currentTimeMillis()
-
-        if (message != lastSpokenGuide || now - lastSpeakTime >= speakInterval) {
-            lastSpokenGuide = message
-            lastSpeakTime = now
-
-            tts?.stop()
-            tts?.speak(
-                message,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "guide_message"
-            )
-        }
-    }
-
-    private fun selectorFor(mode: CameraMode): CameraSelector {
-        return when (mode) {
-            CameraMode.FRONT -> CameraSelector.DEFAULT_FRONT_CAMERA
-            CameraMode.BACK -> CameraSelector.DEFAULT_BACK_CAMERA
-        }
-    }
-
-    private fun startCamera(mode: CameraMode) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-            bindUseCases(mode)
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun bindUseCases(mode: CameraMode) {
-        val provider = cameraProvider ?: return
-
-        val preview =
-            Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(previewView.surfaceProvider)
-                }
-
-        val imageAnalyzer =
-            ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also { analysis ->
-                    analysis.setAnalyzer(
-                        cameraExecutor,
-                        FrameAnalyzer(
-                            faceLandmarkerHelper = faceLandmarkerHelper,
-                            protocolManager = protocolManager,
-                            sessionState = sessionState,
-                            handLandmarkerHelper = handLandmarkerHelper,
-                            irisSegmentationHelper = irisSegmentationHelper,
-                            cameraMode = mode
-                        ) { result ->
-                            runOnUiThread {
-                                guideText.text = result.guideMessage
-                                fpsText.text = result.fpsText
-                                subtitleText.text = buildSubtitle(result)
-
-                                debugText.visibility = View.GONE
-                                debugText.text = result.debugText
-
-                                overlayView.setResults(
-                                    leftEyeRoiRect = result.leftEyeRoiRect,
-                                    rightEyeRoiRect = result.rightEyeRoiRect,
-                                    bothEyesReady = result.bothEyesReady,
-                                    imageWidth = result.imageWidth,
-                                    imageHeight = result.imageHeight
-                                )
-
-                                if (result.isFinalResult) {
-                                    resultCard.visibility = View.VISIBLE
-                                    resultValueText.text = result.finalResultLabel
-                                    resultReasonText.text = result.finalResultReason
-                                } else {
-                                    resultCard.visibility = View.GONE
-                                }
-
-                                speakGuideMessage(result.guideMessage)
-
-                                if (result.requestedCameraMode != currentCameraMode) {
-                                    currentCameraMode = result.requestedCameraMode
-                                    currentTorchOn = false
-                                    bindUseCases(currentCameraMode)
-                                    return@runOnUiThread
-                                }
-
-                                if (result.requestTorchOn != currentTorchOn) {
-                                    currentTorchOn = result.requestTorchOn
-
-                                    if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
-                                        boundCamera?.cameraControl?.enableTorch(currentTorchOn)
-                                    }
-                                }
-
-                                if (result.isFinalResult && !hasSavedFinalResult) {
-                                    csvLogger.append(result)
-                                    hasSavedFinalResult = true
-                                }
-                            }
-                        }
-                    )
-                }
-
-        try {
-            provider.unbindAll()
-
-            boundCamera =
-                provider.bindToLifecycle(
-                    this,
-                    selectorFor(mode),
-                    preview,
-                    imageAnalyzer
-                )
-
-            if (boundCamera?.cameraInfo?.hasFlashUnit() == true) {
-                boundCamera?.cameraControl?.enableTorch(currentTorchOn)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun buildSubtitle(result: AnalysisResult): String {
-        return if (result.isFinalResult) {
-            "최종 점수: %.2f".format(result.finalResultScore)
-        } else {
-            "누적 점수: %.2f | 유효 프레임: %d".format(
-                result.accumulatedScore,
-                result.accumulatedFrameCount
-            )
-        }
-    }
-
-    private fun allPermissionsGranted(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
+    // 🔥 ROI 들어오는 부분 (네 기존 코드에서 연결해야 함)
+    fun onEyeDetected(
+        leftEye: Bitmap?,
+        rightEye: Bitmap?
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val result = analyzer.analyze(leftEye, rightEye)
 
-        if (requestCode == requestCodeCamera) {
-            if (allPermissionsGranted()) {
-                startCamera(currentCameraMode)
-            } else {
-                finish()
-            }
+        // ✅ 눈 가림 판단
+        if (result.rightCovered && !result.leftCovered) {
+            guideText.text = "오른쪽 눈 가림 감지"
+        } else if (result.leftCovered && !result.rightCovered) {
+            guideText.text = "왼쪽 눈 가림 감지"
+        } else {
+            guideText.text = "눈 상태 확인 중"
         }
-    }
 
-    override fun onDestroy() {
-        super.onDestroy()
-
-        faceLandmarkerHelper.clear()
-        handLandmarkerHelper.clear()
-        irisSegmentationHelper.close()
-
-        cameraExecutor.shutdown()
-
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
+        // ✅ 디버그
+        debugText.visibility = View.VISIBLE
+        debugText.text = result.debugText
     }
 }
